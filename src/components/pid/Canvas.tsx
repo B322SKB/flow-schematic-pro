@@ -255,4 +255,3 @@ function PipeView({ pipe, scheme, crossings, selected, onSelect }: {
   );
 }
 
-export { SYMBOLS };

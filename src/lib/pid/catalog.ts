@@ -84,14 +84,31 @@ export function fittingK(id: FittingId, joint: JointType) {
 
 export type CircuitId = "supply" | "return" | "glycol_s" | "glycol_r" | "cw" | "hw" | "other";
 export const CIRCUITS: Record<CircuitId, { name: string; color: string }> = {
-  supply: { name: "Tur", color: "var(--pipe-supply)" },
-  return: { name: "Retur", color: "var(--pipe-return)" },
-  glycol_s: { name: "Glicol tur", color: "var(--pipe-glycol-s)" },
-  glycol_r: { name: "Glicol retur", color: "var(--pipe-glycol-r)" },
-  cw: { name: "Apă răcire", color: "var(--pipe-cw)" },
-  hw: { name: "Apă caldă", color: "var(--pipe-hw)" },
-  other: { name: "Altul", color: "var(--pipe-other)" },
+  supply: { name: "Tur apă răcită", color: "#38bdf8" },
+  return: { name: "Retur apă răcită", color: "#fb923c" },
+  glycol_s: { name: "Glicol tur", color: "#22d3ee" },
+  glycol_r: { name: "Glicol retur", color: "#a78bfa" },
+  cw: { name: "Apă condensator", color: "#34d399" },
+  hw: { name: "Apă caldă / agent termic", color: "#f43f5e" },
+  other: { name: "Altul", color: "#94a3b8" },
 };
+export const CIRCUIT_IDS = Object.keys(CIRCUITS) as CircuitId[];
+export const DEFAULT_CIRCUIT_COLORS: Record<CircuitId, string> = Object.fromEntries(
+  CIRCUIT_IDS.map((c) => [c, CIRCUITS[c].color]),
+) as Record<CircuitId, string>;
+
 export const CIRCUIT_PREFIX: Record<CircuitId, string> = {
   supply: "CHS", return: "CHR", glycol_s: "GS", glycol_r: "GR", cw: "CW", hw: "HW", other: "P",
 };
+
+/** Distanța între cuplele / îmbinările intermediare pe conductă (m). */
+export const COUPLING_SPACING = 2;
+
+
+/** Culoarea efectivă a unui circuit (personalizată la nivel de proiect). */
+export function circuitColor(
+  scheme: { circuitColors?: Partial<Record<CircuitId, string>> } | undefined,
+  id: CircuitId,
+) {
+  return scheme?.circuitColors?.[id] ?? DEFAULT_CIRCUIT_COLORS[id];
+}

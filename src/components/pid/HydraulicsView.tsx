@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { CIRCUITS, getMaterial, sizeLabel, type CircuitId } from "@/lib/pid/catalog";
+import { CIRCUITS, circuitColor, getMaterial, sizeLabel, type CircuitId } from "@/lib/pid/catalog";
 import { FLUID_LABEL, fluidProps, type FluidId } from "@/lib/pid/fluids";
 import { computePipe, fmtP, type PUnit } from "@/lib/pid/hydraulics";
 import { usePid } from "@/lib/pid/store";
@@ -36,6 +36,7 @@ export function FluidCard() {
           <Prop k="ρ" v={`${fp.rho.toFixed(1)} kg/m³`} />
           <Prop k="μ" v={`${(fp.mu * 1000).toFixed(3)} mPa·s`} />
           <Prop k="ν" v={`${(fp.nu * 1e6).toFixed(3)} mm²/s`} />
+          <Prop k="cp" v={`${(fp.cp / 1000).toFixed(3)} kJ/kg·K`} />
           <Prop k="T îngheț" v={`${fp.freeze.toFixed(1)} °C`} />
         </div>
         {freezeRisk && (
@@ -62,7 +63,7 @@ export function HydraulicsView() {
   const byCircuit = new Map<CircuitId, { L: number; dp: number; n: number }>();
   for (const { p, r } of results) {
     const c = byCircuit.get(p.circuit) ?? { L: 0, dp: 0, n: 0 };
-    c.L += p.length; c.dp += r.dpTotal; c.n++;
+    c.L += r.L; c.dp += r.dpTotal; c.n++;
     byCircuit.set(p.circuit, c);
   }
   const total = results.reduce((s, x) => s + x.r.dpTotal, 0);
@@ -88,7 +89,7 @@ export function HydraulicsView() {
           <CardContent className="space-y-2 font-mono text-xs">
             {[...byCircuit.entries()].map(([c, v]) => (
               <div key={c} className="flex items-center justify-between rounded border px-2 py-1.5">
-                <span className="flex items-center gap-2 font-sans"><span className="h-2.5 w-2.5 rounded-full" style={{ background: CIRCUITS[c].color }} />{CIRCUITS[c].name}</span>
+                <span className="flex items-center gap-2 font-sans"><span className="h-2.5 w-2.5 rounded-full" style={{ background: circuitColor(scheme, c) }} />{CIRCUITS[c].name}</span>
                 <span>{v.L.toFixed(1)} m · <b className="text-primary">{fmtP(v.dp, pu, fp.rho)} {pu}</b></span>
               </div>
             ))}
@@ -112,9 +113,9 @@ export function HydraulicsView() {
             <TableBody>
               {results.map(({ p, r }) => (
                 <TableRow key={p.id} className="cursor-pointer" onClick={() => select({ kind: "pipe", id: p.id })}>
-                  <TableCell className="whitespace-nowrap"><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: CIRCUITS[p.circuit].color }} />{p.tag}</TableCell>
+                  <TableCell className="whitespace-nowrap"><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: circuitColor(scheme, p.circuit) }} />{p.tag}</TableCell>
                   <TableCell className="whitespace-nowrap font-sans">{getMaterial(p.material).short} {sizeLabel(p.material, p.dn)}</TableCell>
-                  <TableCell>{p.length.toFixed(1)}</TableCell>
+                  <TableCell>{r.L.toFixed(1)}</TableCell>
                   <TableCell>
                     <Input type="number" step="0.1" className="h-7 w-20 font-mono text-xs"
                       value={qu === "m3h" ? p.flow : +(p.flow / 3.6).toFixed(3)}

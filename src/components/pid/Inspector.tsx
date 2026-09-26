@@ -1,16 +1,18 @@
-import { Trash2, RotateCw } from "lucide-react";
+import { Trash2, RotateCw, ArrowLeftRight, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
-  CIRCUITS, DN_LIST, FITTINGS, JOINT_LABEL, MATERIALS, getMaterial, innerDiameterMm, jointAllowed, sizeLabel,
+  CIRCUITS, CIRCUIT_IDS, DN_LIST, FITTINGS, JOINT_LABEL, MATERIALS, circuitColor, getMaterial,
+  innerDiameterMm, jointAllowed, sizeLabel,
   type CircuitId, type FittingId, type JointType, type MaterialId,
 } from "@/lib/pid/catalog";
 import { autoBends, computePipe, fmtP } from "@/lib/pid/hydraulics";
-import { fluidProps } from "@/lib/pid/fluids";
+import { flowFromKw, fluidProps } from "@/lib/pid/fluids";
 import { usePid } from "@/lib/pid/store";
-import { SYMBOLS } from "@/lib/pid/symbols";
+import { getSymbol } from "@/lib/pid/symbols";
 import type { Pipe } from "@/lib/pid/types";
 import { Field, Sel } from "./fields";
 
@@ -31,7 +33,7 @@ export function normalizePipe(p: Pipe, patch: Partial<Pipe>): Partial<Pipe> {
 }
 
 export function Inspector() {
-  const { scheme, selected, updateNode, updatePipe, removeSelected, recalcLengths, pipeDefaults, setPipeDefaults } = usePid();
+  const { scheme, selected, updateNode, updatePipe, removeSelected, flipPipe, pipeDefaults, setPipeDefaults } = usePid();
   const node = selected?.kind === "node" ? scheme.nodes.find((n) => n.id === selected.id) : undefined;
   const pipe = selected?.kind === "pipe" ? scheme.pipes.find((p) => p.id === selected.id) : undefined;
   const fp = fluidProps(scheme.fluid, scheme.concentration, scheme.temperature);
@@ -44,27 +46,37 @@ export function Inspector() {
             <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Setări conductă nouă</div>
             <p className="text-xs text-muted-foreground">Aceste valori se aplică următoarelor conducte trasate.</p>
             <PipeFields value={pipeDefaults as Pipe} onChange={(p) => setPipeDefaults(normalizePipe(pipeDefaults as Pipe, p) as never)} />
-            <Field label="Debit implicit (m³/h)">
-              <Input type="number" className="h-8" value={pipeDefaults.flow} onChange={(e) => setPipeDefaults({ flow: +e.target.value })} />
-            </Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Lungime implicită (m)">
+                <Input type="number" step="0.1" className="h-8" value={pipeDefaults.length} onChange={(e) => setPipeDefaults({ length: +e.target.value })} />
+              </Field>
+              <Field label="Debit implicit (m³/h)">
+                <Input type="number" className="h-8" value={pipeDefaults.flow} onChange={(e) => setPipeDefaults({ flow: +e.target.value })} />
+              </Field>
+            </div>
           </>
         )}
 
         {node && (() => {
-          const s = SYMBOLS[node.type]!;
+          const s = getSymbol(node.type);
           return (
             <>
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-xs uppercase tracking-wider text-muted-foreground">{s.category}</div>
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground">{s.category}{s.code ? ` · ${s.code}` : ""}</div>
                   <div className="font-semibold">{s.name}</div>
                 </div>
                 <div className="flex gap-1">
-                  <Button size="icon" variant="secondary" onClick={() => { updateNode(node.id, { rotation: (node.rotation + 90) % 360 }); recalcLengths(); }}><RotateCw className="h-4 w-4" /></Button>
+                  <Button size="icon" variant="secondary" onClick={() => updateNode(node.id, { rotation: (node.rotation + 90) % 360 })}><RotateCw className="h-4 w-4" /></Button>
                   <Button size="icon" variant="destructive" onClick={removeSelected}><Trash2 className="h-4 w-4" /></Button>
                 </div>
               </div>
               <Field label="Tag"><Input className="h-8 font-mono" value={node.tag} onChange={(e) => updateNode(node.id, { tag: e.target.value })} /></Field>
+              {s.riser && (
+                <Field label={`Cotă ${s.riser === "up" ? "urcare (+)" : "coborâre (−)"} — m`}>
+                  <Input type="number" step="0.1" min={0} className="h-8" value={node.z ?? 0} onChange={(e) => updateNode(node.id, { z: Math.abs(+e.target.value) })} />
+                </Field>
+              )}
               {s.bomGroup !== "Echipamente" && (
                 <Field label="DN (gol = după conductă)">
                   <Sel value={node.dn ?? 0} onChange={(v) => updateNode(node.id, { dn: v || undefined })}
@@ -82,8 +94,26 @@ export function Inspector() {
                   <Field label="Cădere presiune echipament (kPa)">
                     <Input type="number" className="h-8" value={node.dpFixed ?? 0} onChange={(e) => updateNode(node.id, { dpFixed: +e.target.value })} />
                   </Field>
-                  <Field label="Specificație (BOM)">
-                    <Input className="h-8" value={node.note ?? ""} placeholder="ex. 350 kW, 60 m³/h @ 20 mCA"
+                  <div className="grid grid-cols-2 gap-2">
+                    <Field label="Putere (kW)">
+                      <Input type="number" className="h-8" value={node.kw ?? 0} onChange={(e) => updateNode(node.id, { kw: +e.target.value })} />
+                    </Field>
+                    <Field label="ΔT (K)">
+                      <Input type="number" step="0.5" className="h-8" value={node.deltaT ?? scheme.deltaT}
+                        onChange={(e) => updateNode(node.id, { deltaT: +e.target.value })} />
+                    </Field>
+                  </div>
+                  <Field label="Debit (m³/h)">
+                    <Input type="number" step="0.1" className="h-8" value={node.flow ?? 0} onChange={(e) => updateNode(node.id, { flow: +e.target.value })} />
+                  </Field>
+                  {!!node.kw && (
+                    <p className="flex items-center gap-1.5 text-xs text-primary">
+                      <Zap className="h-3.5 w-3.5" />
+                      Debit calculat din {node.kw} kW și ΔT {node.deltaT ?? scheme.deltaT} K: {flowFromKw(node.kw, node.deltaT ?? scheme.deltaT, fp).toFixed(2)} m³/h
+                    </p>
+                  )}
+                  <Field label="Specificație suplimentară (BOM)">
+                    <Input className="h-8" value={node.note ?? ""} placeholder="ex. R513A, 2 circuite, 400V"
                       onChange={(e) => updateNode(node.id, { note: e.target.value })} />
                   </Field>
                 </>
@@ -99,20 +129,43 @@ export function Inspector() {
           const upd = (p: Partial<Pipe>) => updatePipe(pipe.id, normalizePipe(pipe, p));
           return (
             <>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-xs uppercase tracking-wider text-muted-foreground">Segment conductă</div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: circuitColor(scheme, pipe.circuit) }} />
+                    Conductă DN{pipe.dn}
+                  </div>
                   <Input className="mt-1 h-8 font-mono" value={pipe.tag} onChange={(e) => updatePipe(pipe.id, { tag: e.target.value })} />
                 </div>
-                <Button size="icon" variant="destructive" onClick={removeSelected}><Trash2 className="h-4 w-4" /></Button>
+                <div className="flex gap-1">
+                  <Button size="icon" variant="secondary" title="Inversează sensul de curgere" onClick={() => flipPipe(pipe.id)}><ArrowLeftRight className="h-4 w-4" /></Button>
+                  <Button size="icon" variant="destructive" onClick={removeSelected}><Trash2 className="h-4 w-4" /></Button>
+                </div>
               </div>
               <PipeFields value={pipe} onChange={upd} />
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Lungime (m)"><Input type="number" step="0.1" className="h-8" value={pipe.length} onChange={(e) => updatePipe(pipe.id, { length: +e.target.value })} /></Field>
-                <Field label="Debit (m³/h)"><Input type="number" step="0.1" className="h-8" value={pipe.flow} onChange={(e) => updatePipe(pipe.id, { flow: +e.target.value })} /></Field>
-              </div>
-              <Field label="Traseu">
-                <Sel value={pipe.routing} onChange={(v) => { updatePipe(pipe.id, { routing: v }); recalcLengths(); }}
+              <Field label="Lungime reală (m) — introdusă manual">
+                <Input type="number" step="0.1" min={0} className="h-8" value={pipe.length} onChange={(e) => updatePipe(pipe.id, { length: +e.target.value })} />
+              </Field>
+              <Field label="Debit">
+                <ToggleGroup type="single" variant="outline" size="sm" className="mb-2" value={pipe.flowMode}
+                  onValueChange={(v) => v && updatePipe(pipe.id, { flowMode: v as Pipe["flowMode"] })}>
+                  <ToggleGroupItem value="manual">Manual</ToggleGroupItem>
+                  <ToggleGroupItem value="kw">Din kW și ΔT</ToggleGroupItem>
+                </ToggleGroup>
+                {pipe.flowMode === "manual" ? (
+                  <Input type="number" step="0.1" className="h-8" value={pipe.flow} onChange={(e) => updatePipe(pipe.id, { flow: +e.target.value })} />
+                ) : (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input type="number" className="h-8" placeholder="kW" value={pipe.kw ?? 0} onChange={(e) => updatePipe(pipe.id, { kw: +e.target.value })} />
+                      <Input type="number" step="0.5" className="h-8" placeholder="ΔT" value={pipe.deltaT ?? scheme.deltaT} onChange={(e) => updatePipe(pipe.id, { deltaT: +e.target.value })} />
+                    </div>
+                    <div className="flex items-center gap-1.5 font-mono text-xs text-primary"><Zap className="h-3.5 w-3.5" />{pipe.flow.toFixed(2)} m³/h</div>
+                  </div>
+                )}
+              </Field>
+              <Field label="Traseu pe desen">
+                <Sel value={pipe.routing} onChange={(v) => updatePipe(pipe.id, { routing: v })}
                   options={[{ value: "auto", label: "Automat (Z)" }, { value: "hv", label: "Orizontal → vertical" }, { value: "vh", label: "Vertical → orizontal" }]} />
               </Field>
               <div>
@@ -134,6 +187,7 @@ export function Inspector() {
                   {r.velWarn && <Badge variant={r.velWarn === "high" ? "destructive" : "secondary"}>{r.velWarn === "high" ? "viteză mare" : "viteză mică"}</Badge>}
                 </div>
                 <Row k="Di" v={`${innerDiameterMm(pipe.material, pipe.dn).toFixed(1)} mm`} />
+                <Row k="L calcul" v={`${r.L.toFixed(1)} m`} />
                 <Row k="v" v={`${r.v.toFixed(2)} m/s`} />
                 <Row k="Re" v={`${Math.round(r.Re).toLocaleString("ro-RO")} (${r.regime})`} />
                 <Row k="λ" v={r.f.toFixed(4)} />
@@ -161,14 +215,14 @@ function PipeFields({ value, onChange }: { value: Pipe; onChange: (p: Partial<Pi
     <>
       <Field label="Circuit / mediu">
         <Sel<CircuitId> value={value.circuit} onChange={(v) => onChange({ circuit: v })}
-          options={(Object.keys(CIRCUITS) as CircuitId[]).map((c) => ({ value: c, label: CIRCUITS[c].name }))} />
+          options={CIRCUIT_IDS.map((c) => ({ value: c, label: CIRCUITS[c].name }))} />
       </Field>
       <Field label="Material">
         <Sel<MaterialId> value={value.material} onChange={(v) => onChange({ material: v })}
           options={MATERIALS.map((x) => ({ value: x.id, label: x.name }))} />
       </Field>
       <div className="grid grid-cols-2 gap-2">
-        <Field label="Diametru">
+        <Field label="Diametru / secțiune">
           <Sel<number> value={value.dn} onChange={(v) => onChange({ dn: v })} options={dnOptions(value.material)} />
         </Field>
         <Field label="Îmbinare">

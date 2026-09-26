@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { buildBom, exportCsv, exportPdf, exportXlsx } from "@/lib/pid/bom";
+import { COUPLING_SPACING } from "@/lib/pid/catalog";
 import { usePid } from "@/lib/pid/store";
 
 export function BomView() {
@@ -35,15 +36,19 @@ export function BomView() {
         <CardContent>
           <Table>
             <TableHeader>
-              <TableRow><TableHead>Articol</TableHead><TableHead>Specificație</TableHead><TableHead className="text-right">Cantitate</TableHead><TableHead>UM</TableHead><TableHead>Tag-uri</TableHead></TableRow>
+              <TableRow>
+                <TableHead>Articol</TableHead><TableHead>Cod</TableHead><TableHead>Specificație</TableHead>
+                <TableHead className="text-right">Cantitate</TableHead><TableHead>UM</TableHead><TableHead>Tag-uri</TableHead>
+              </TableRow>
             </TableHeader>
             <TableBody>
               {groups.map((g) => (
                 <Fragment key={g}>
-                  <TableRow className="bg-muted/40 hover:bg-muted/40"><TableCell colSpan={5} className="py-1.5 text-xs font-semibold uppercase tracking-wider text-primary">{g.slice(3)}</TableCell></TableRow>
+                  <TableRow className="bg-muted/40 hover:bg-muted/40"><TableCell colSpan={6} className="py-1.5 text-xs font-semibold uppercase tracking-wider text-primary">{g.slice(3)}</TableCell></TableRow>
                   {rows.filter((r) => r.group === g).map((r) => (
-                    <TableRow key={g + r.item + r.spec + r.unit}>
+                    <TableRow key={g + r.item + r.code + r.spec + r.unit}>
                       <TableCell className="font-medium">{r.item}</TableCell>
+                      <TableCell className="font-mono text-xs text-primary">{r.code}</TableCell>
                       <TableCell className="text-muted-foreground">{r.spec}</TableCell>
                       <TableCell className="text-right font-mono">{r.unit === "m" ? r.qty.toFixed(1) : r.qty}</TableCell>
                       <TableCell>{r.unit}</TableCell>
@@ -54,7 +59,10 @@ export function BomView() {
               ))}
             </TableBody>
           </Table>
-          <p className="mt-3 text-xs text-muted-foreground">Îmbinările sunt estimate: 2 capete + bare de 6 m (oțel) / 12 m (PE) + 2 îmbinări per fiting. Coturile 90° sunt deduse din schimbările de direcție ale traseului.</p>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Îmbinările sunt estimate: 2 capete + cuple intermediare la pas de {COUPLING_SPACING} m + 2 îmbinări per fiting.
+            Coturile 90° sunt deduse din schimbările de direcție ale traseului, iar cotele de urcare/coborâre se adaugă la metraj.
+          </p>
         </CardContent>
       </Card>
     </div>

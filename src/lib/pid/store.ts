@@ -85,8 +85,8 @@ function demo(): Scheme {
   const s: Scheme = { name: "Circuit apă răcită – demo", nodes, pipes, fluid: "eg", concentration: 30, temperature: 7 };
   const tags: string[] = [];
   for (const p of s.pipes) { p.tag = pipeTag(p, tags); tags.push(p.tag); p.length = routeLen(p, s); }
-  s.pipes[0].fittings = { elbow90: 2 };
-  s.pipes[6].fittings = { strainer: 1 };
+  s.pipes[0]!.fittings = { elbow90: 2 };
+  s.pipes[6]!.fittings = { strainer: 1 };
   return s;
 }
 

@@ -120,6 +120,11 @@ function App() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <Button size="sm" variant="ghost" title="Însumează automat debitele de la consumatori spre sursă"
+            onClick={() => {
+              const r = applyAutoFlows();
+              toast.success(`${r.updated} tronson(e) actualizate${r.ambiguous ? ` · ${r.ambiguous} de inel rămân manuale` : ""}`);
+            }}><Sigma className="h-4 w-4" /></Button>
           <Button size="sm" variant="ghost" onClick={retag} title="Re-numerotează tag-urile"><Tags className="h-4 w-4" /></Button>
           <Button size="sm" variant="ghost" onClick={() => confirm("Reîncarci schema demo în acest proiect?") && reset()} title="Schemă demo"><RefreshCcw className="h-4 w-4" /></Button>
           <Button size="sm" variant="ghost" onClick={() => confirm("Golești schema din acest proiect?") && reset(true)} title="Golește schema"><FilePlus2 className="h-4 w-4" /></Button>

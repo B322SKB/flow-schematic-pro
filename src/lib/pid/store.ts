@@ -24,12 +24,18 @@ interface State {
   projects: Scheme[];
   activeId: string;
   selected: { kind: "node" | "pipe"; id: string } | null;
+  multi: string[]; // noduri selectate în grup
+  grid: number; // pas grilă (px)
+  setGrid: (g: number) => void;
+  setMulti: (ids: string[]) => void;
+  moveNodes: (ids: string[], dx: number, dy: number) => void;
+  duplicateNodes: (ids: string[]) => void;
   pipeDefaults: PipeDefaults;
   scheme: Scheme;
   setScheme: (p: Partial<Scheme>) => void;
   addNode: (type: SymbolType, x: number, y: number) => void;
   updateNode: (id: string, p: Partial<PidNode>) => void;
-  addPipe: (from: Pipe["from"], to: Pipe["to"]) => void;
+  addPipe: (from: Pipe["from"], to: Pipe["to"], opts?: { direct?: boolean }) => void;
   updatePipe: (id: string, p: Partial<Pipe>) => void;
   flipPipe: (id: string) => void;
   select: (s: State["selected"]) => void;
@@ -82,9 +88,9 @@ function demo(): Scheme {
     n("ch", "chiller", "CH-01", 180, 320, { kw: 350, deltaT: 5 }),
     n("p1", "pump_inline", "P-01", 380, 300),
     n("v1", "v_butterfly", "BFV-01", 500, 300),
-    n("t1", "buffer_tank", "TK-01", 680, 340),
+    n("t1", "buffer_tank", "TK-01", 680, 340, { volume: 1000 }),
     n("cv", "v_control", "CV-01", 860, 280),
-    n("cl", "ahu_coil", "CL-01", 1020, 330, { kw: 120, deltaT: 5 }),
+    n("cl", "ahu_coil", "CL-01", 1020, 330, { kw: 120, kwSens: 105, deltaT: 5 }),
     n("nr", "v_check", "NRV-01", 500, 395),
     n("ev", "expansion", "EV-01", 380, 470),
     n("tee", "tee", "T-01", 380, 395),
@@ -140,6 +146,41 @@ export const usePid = create<State>()(
         activeId: first.id,
         scheme: first,
         selected: null,
+        multi: [],
+        grid: 5,
+        setGrid: (g) => set({ grid: g }),
+        setMulti: (ids) => set({ multi: ids }),
+        moveNodes: (ids, dx, dy) => {
+          const set_ = new Set(ids);
+          patchScheme((s) => ({ ...s, nodes: s.nodes.map((n) => (set_.has(n.id) ? { ...n, x: n.x + dx, y: n.y + dy } : n)) }));
+        },
+        duplicateNodes: (ids) => {
+          const st = get();
+          const src = new Set(ids);
+          const map = new Map<string, string>();
+          const tags = st.scheme.nodes.map((n) => n.tag);
+          const nodes: PidNode[] = [];
+          for (const n of st.scheme.nodes) {
+            if (!src.has(n.id)) continue;
+            const id = uid();
+            map.set(n.id, id);
+            const tag = nextTag(getSymbol(n.type).prefix, tags);
+            tags.push(tag);
+            nodes.push({ ...structuredClone(n), id, tag, y: n.y + 120 });
+          }
+          const ptags = st.scheme.pipes.map((p) => p.tag);
+          const pipes: Pipe[] = [];
+          for (const p of st.scheme.pipes) {
+            const a = map.get(p.from.node), b = map.get(p.to.node);
+            if (!a || !b) continue;
+            const np: Pipe = { ...structuredClone(p), id: uid(), from: { ...p.from, node: a }, to: { ...p.to, node: b } };
+            np.tag = pipeTag(np, ptags);
+            ptags.push(np.tag);
+            pipes.push(np);
+          }
+          patchScheme((s) => ({ ...s, nodes: [...s.nodes, ...nodes], pipes: [...s.pipes, ...pipes] }),
+            { multi: nodes.map((n) => n.id), selected: nodes[0] ? { kind: "node", id: nodes[0].id } : null });
+        },
         pipeDefaults: { dn: 80, material: "steel_carbon", joint: "grooved", circuit: "supply", flow: 20, length: 5 },
 
         setScheme: (p) => patchScheme((s) => ({ ...s, ...p })),
@@ -169,7 +210,7 @@ export const usePid = create<State>()(
             }),
           })),
 
-        addPipe: (from, to) => {
+        addPipe: (from, to, opts) => {
           const st = get();
           if (from.node === to.node && from.port === to.port) return;
           const d = st.pipeDefaults;
@@ -178,7 +219,8 @@ export const usePid = create<State>()(
             length: d.length, flow: d.flow, flowMode: "manual", routing: "auto", fittings: {},
           };
           pipe.tag = pipeTag(pipe, st.scheme.pipes.map((p) => p.tag));
-          pipe.length = routeLen(pipe, st.scheme);
+          pipe.length = opts?.direct ? 0 : routeLen(pipe, st.scheme);
+          if (opts?.direct) pipe.direct = true;
           patchScheme((s) => ({ ...s, pipes: [...s.pipes, pipe] }), { selected: { kind: "pipe", id: pipe.id } });
         },
 
@@ -202,10 +244,20 @@ export const usePid = create<State>()(
             pipes: s.pipes.map((p) => (p.id === id ? { ...p, from: p.to, to: p.from } : p)),
           })),
 
-        select: (s) => set({ selected: s }),
+        select: (s) => set((st) => ({ selected: s, multi: s?.kind === "node" && st.multi.includes(s.id) ? st.multi : [] })),
 
         removeSelected: () => {
           const sel = get().selected;
+          const multi = get().multi;
+          if (multi.length > 1) {
+            const ids = new Set(multi);
+            patchScheme((s) => ({
+              ...s,
+              nodes: s.nodes.filter((n) => !ids.has(n.id)),
+              pipes: s.pipes.filter((p) => !ids.has(p.from.node) && !ids.has(p.to.node)),
+            }), { selected: null, multi: [] });
+            return;
+          }
           if (!sel) return;
           patchScheme((s) => sel.kind === "pipe"
             ? { ...s, pipes: s.pipes.filter((p) => p.id !== sel.id) }
@@ -311,7 +363,7 @@ export const usePid = create<State>()(
     },
     {
       name: "pid-studio-v2",
-      partialize: (s) => ({ projects: s.projects, activeId: s.activeId, pipeDefaults: s.pipeDefaults }),
+      partialize: (s) => ({ projects: s.projects, activeId: s.activeId, pipeDefaults: s.pipeDefaults, grid: s.grid }),
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<State>;
         const projects = p.projects?.length ? p.projects : current.projects;

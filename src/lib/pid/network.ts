@@ -94,7 +94,7 @@ export function criticalPath(scheme: Scheme, fp: FluidProps): CriticalPath | nul
   const consider = (nodeId: string) => {
     if (!used.length) return;
     const n = scheme.nodes.find((x) => x.id === nodeId);
-    const term = !!n && getSymbol(n.type).terminal;
+    const term = !!n && !!getSymbol(n.type).terminal;
     let acc = 0;
     for (const id of used) acc += dp.get(id) ?? 0;
     // un traseu care ajunge la un consumator are prioritate față de unul oarecare

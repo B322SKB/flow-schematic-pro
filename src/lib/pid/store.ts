@@ -7,6 +7,7 @@ import { getSymbol, syncCustomSymbols, type CustomSymbol, type SymbolType } from
 import type { Pipe, PidNode, Scheme } from "./types";
 import { pipeRoute } from "./hydraulics";
 import { flowFromKw, fluidProps } from "./fluids";
+import { propagateFlows } from "./network";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 export const PX_PER_M = 40;
@@ -47,7 +48,8 @@ interface State {
   resetCircuitColors: () => void;
   addCustomSymbol: (c: Omit<CustomSymbol, "id">) => void;
   removeCustomSymbol: (id: string) => void;
-  newProject: (name?: string, demoScheme?: boolean) => void;
+  newProject: (name?: string, template?: "empty" | "demo" | "ring_dc") => void;
+  applyAutoFlows: () => { updated: number; ambiguous: number };
   switchProject: (id: string) => void;
   duplicateProject: (id: string) => void;
   deleteProject: (id: string) => void;
@@ -122,7 +124,71 @@ function demo(): Scheme {
   return s;
 }
 
+/** Șablon: buclă inel Data Center, chillere N+1 cu modul hidraulic integrat, consumatori IRU/RDHX/CCU. */
+function ringDc(): Scheme {
+  const n = (id: string, type: SymbolType, tag: string, x: number, y: number, extra: Partial<PidNode> = {}): PidNode => ({
+    id, type, tag, x, y, rotation: 0, dpFixed: getSymbol(type).dpDefault, ...extra,
+  });
+  const nodes: PidNode[] = [
+    n("ch1", "chiller", "CH-01", 120, 200, { kw: 400, deltaT: 6, intPump: "twin", pumpHead: 150 }),
+    n("ch2", "chiller", "CH-02", 120, 620, { kw: 400, deltaT: 6, intPump: "twin", pumpHead: 150, redundant: true }),
+    n("ts1", "tee", "T-01", 520, 140),
+    n("ts2", "tee", "T-02", 880, 140),
+    n("ts3", "tee", "T-03", 1240, 140),
+    n("ts4", "tee", "T-04", 1520, 140),
+    n("tr1", "tee", "T-05", 520, 700, { rotation: 180 }),
+    n("tr2", "tee", "T-06", 880, 700, { rotation: 180 }),
+    n("tr3", "tee", "T-07", 1240, 700, { rotation: 180 }),
+    n("tr4", "tee", "T-08", 1520, 700, { rotation: 180 }),
+    n("iru", "inrow", "IRU-01", 440, 400, { kw: 60, kwSens: 60, deltaT: 6 }),
+    n("rdhx", "rdhx", "RDHX-01", 800, 400, { kw: 45, kwSens: 45, deltaT: 6 }),
+    n("ccu", "ccu", "CCU-01", 1160, 400, { kw: 80, kwSens: 70, deltaT: 6 }),
+  ];
+  const pipes: Pipe[] = [];
+  const mk = (from: [string, string], to: [string, string], circuit: CircuitId, dn = 100) =>
+    pipes.push({
+      id: uid(), tag: "", from: { node: from[0]!, port: from[1]! }, to: { node: to[0]!, port: to[1]! },
+      dn, material: "steel_carbon", joint: "grooved", circuit, length: 1, flow: 0, flowMode: "manual",
+      routing: "auto", fittings: {},
+    });
+  // inel tur
+  mk(["ch1", "c"], ["ts1", "a"], "supply");
+  mk(["ts1", "b"], ["ts2", "a"], "supply");
+  mk(["ts2", "b"], ["ts3", "a"], "supply");
+  mk(["ts3", "b"], ["ts4", "a"], "supply");
+  mk(["ts4", "b"], ["ch2", "c"], "supply");
+  // inel retur
+  mk(["tr1", "a"], ["ch1", "d"], "return");
+  mk(["tr1", "b"], ["tr2", "a"], "return");
+  mk(["tr2", "b"], ["tr3", "a"], "return");
+  mk(["tr3", "b"], ["tr4", "a"], "return");
+  mk(["tr4", "b"], ["ch2", "d"], "return");
+  // consumatori
+  mk(["ts1", "c"], ["iru", "a"], "supply", 50);
+  mk(["iru", "b"], ["tr1", "c"], "return", 50);
+  mk(["ts2", "c"], ["rdhx", "a"], "supply", 50);
+  mk(["rdhx", "b"], ["tr2", "c"], "return", 50);
+  mk(["ts3", "c"], ["ccu", "a"], "supply", 50);
+  mk(["ccu", "b"], ["tr3", "c"], "return", 50);
+  const s: Scheme = { ...emptyScheme("Inel Data Center – N+1"), nodes, pipes, fluid: "eg", concentration: 30, temperature: 12, deltaT: 6 };
+  const tags: string[] = [];
+  for (const p of s.pipes) { p.tag = pipeTag(p, tags); tags.push(p.tag); p.length = routeLen(p, s); }
+  return s;
+}
+
+export type TemplateId = "empty" | "demo" | "ring_dc";
+export const TEMPLATES: { id: TemplateId; name: string; desc: string }[] = [
+  { id: "empty", name: "Proiect gol", desc: "Pornești de la o planșă liberă." },
+  { id: "demo", name: "Circuit primar cu rezervor tampon", desc: "Chiller, pompă, rezervor tampon, vană de reglaj și baterie." },
+  { id: "ring_dc", name: "Inel Data Center N+1", desc: "Două chillere cu modul hidraulic integrat, buclă inel tur/retur, IRU + RDHX + CCU." },
+];
+export function buildTemplate(id: TemplateId, name?: string): Scheme {
+  const s = id === "demo" ? demo() : id === "ring_dc" ? ringDc() : emptyScheme(name ?? "Proiect nou");
+  return name ? { ...s, name } : s;
+}
+
 const first = demo();
+
 
 function touch(s: Scheme): Scheme {
   return { ...s, updatedAt: Date.now() };
@@ -349,12 +415,32 @@ export const usePid = create<State>()(
             };
           }),
 
-        newProject: (name, demoScheme) =>
+        newProject: (name, template) =>
           set((st) => {
-            const s = demoScheme ? { ...demo(), name: name ?? "Copie demo" } : emptyScheme(name);
+            const s = buildTemplate(template ?? "empty", name);
             syncCustomSymbols(s.customSymbols);
             return { projects: [...st.projects, s], activeId: s.id, scheme: s, selected: null };
           }),
+
+        /** Însumarea automată a debitelor la teuri, pornind de la consumatorii activi. */
+        applyAutoFlows: () => {
+          const st = get();
+          const fp = fluidProps(st.scheme.fluid, st.scheme.concentration, st.scheme.temperature);
+          const flows = propagateFlows(st.scheme, fp);
+          let updated = 0, ambiguous = 0;
+          patchScheme((s) => ({
+            ...s,
+            pipes: s.pipes.map((p) => {
+              const info = flows.get(p.id);
+              if (!info) return p;
+              if (info.ambiguous) { ambiguous++; return p; }
+              if (Math.abs(info.flow - p.flow) < 0.005) return p;
+              updated++;
+              return { ...p, flow: info.flow, flowMode: "manual" as const };
+            }),
+          }));
+          return { updated, ambiguous };
+        },
 
         switchProject: (id) =>
           set((st) => {

@@ -22,6 +22,8 @@ export interface PidNode {
   volume?: number | undefined; // litri – rezervor tampon / vas expansiune
   codeDx?: number | undefined; // deplasare etichetă cod pe desen
   codeDy?: number | undefined;
+  intPump?: "single" | "twin" | undefined; // modul hidraulic integrat (chiller cu pompă)
+  pumpHead?: number | undefined; // kPa, presiune utilă disponibilă la flanșe
 }
 
 export interface Pipe {

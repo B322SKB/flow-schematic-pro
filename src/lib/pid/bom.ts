@@ -13,6 +13,14 @@ export interface BomRow {
   tags: string;
 }
 
+/** Denumirea îmbinării în funcție de tehnologia aleasă. */
+function jointItem(joint: Scheme["pipes"][number]["joint"]) {
+  return joint === "grooved" ? "Cuplă canelată (Victaulic)" :
+    joint === "flanged" ? "Set flanșe + garnitură + șuruburi" :
+    joint === "welded" ? "Sudură cap la cap" :
+    joint === "threaded" ? "Îmbinare filetată (mufă/racord)" : "Manșon electrofuziune";
+}
+
 export function buildBom(scheme: Scheme): BomRow[] {
   const map = new Map<string, BomRow>();
   const add = (group: string, item: string, code: string, spec: string, qty: number, unit: string, tag?: string) => {
@@ -39,14 +47,27 @@ export function buildBom(scheme: Scheme): BomRow[] {
       fittingCount += n;
       add("2. Fitinguri", FITTINGS[k as FittingId].name, `DN${p.dn}`, `${m.short} ${size} · ${jl}`, n, "buc");
     }
-    // îmbinări: 2 capete + intermediare la pas de 2 m + 2 per fiting
-    const joints = 2 + Math.max(0, Math.ceil(len / COUPLING_SPACING) - 1) + fittingCount * 2;
-    const jointItem =
-      p.joint === "grooved" ? "Cuplă canelată (Victaulic)" :
-      p.joint === "flanged" ? "Set flanșe + garnitură + șuruburi" :
-      p.joint === "welded" ? "Sudură cap la cap" :
-      p.joint === "threaded" ? "Îmbinare filetată (mufă/racord)" : "Manșon electrofuziune";
-    add("3. Îmbinări", jointItem, `DN${p.dn}`, `${m.short} ${size} · pas ${COUPLING_SPACING} m`, joints, p.joint === "welded" ? "sudură" : "buc");
+    const unit = p.joint === "welded" ? "sudură" : "buc";
+    // cuple pe tronson: 2 la capete + intermediare la pas de 2 m
+    const ends = 2 + Math.max(0, Math.ceil(len / COUPLING_SPACING) - 1);
+    add("3. Îmbinări", jointItem(p.joint), `DN${p.dn}`, `${m.short} ${size} · tronson (capete + pas ${COUPLING_SPACING} m)`, ends, unit, p.tag);
+    // cuple pe fitingurile din traseu: 2 per fiting
+    if (fittingCount) {
+      add("3. Îmbinări", jointItem(p.joint), `DN${p.dn}`, `${m.short} ${size} · fitinguri traseu (2/fiting)`, fittingCount * 2, unit);
+    }
+  }
+
+  // cuple la racordurile elementelor (vane, fitinguri, echipamente)
+  for (const n of scheme.nodes) {
+    const s = getSymbol(n.type);
+    if (s.bomGroup === "Instrumente") continue;
+    for (const p of scheme.pipes) {
+      if (p.from.node !== n.id && p.to.node !== n.id) continue;
+      const m = getMaterial(p.material);
+      add("3. Îmbinări", jointItem(p.joint), `DN${p.dn}`,
+        `${m.short} ${sizeLabel(p.material, p.dn)} · racord element`, 1,
+        p.joint === "welded" ? "sudură" : "buc", n.tag);
+    }
   }
 
   for (const n of scheme.nodes) {
@@ -61,6 +82,10 @@ export function buildBom(scheme: Scheme): BomRow[] {
       if (s.terminal || s.source) specParts.push(n.redundant ? "redundant" : "activ");
       if (n.flow) specParts.push(`${n.flow} m³/h`);
       if (n.dpFixed) specParts.push(`Δp ${n.dpFixed} kPa`);
+      if (s.source && n.intPump) {
+        specParts.push(`modul hidraulic integrat: pompă ${n.intPump === "twin" ? "dublă (1A+1R)" : "simplă"}`);
+        if (n.pumpHead) specParts.push(`presiune utilă ${n.pumpHead} kPa`);
+      }
       if (n.note) specParts.push(n.note);
     } else if (dn) specParts.push(`DN${dn}`);
     if (s.riser && n.z) specParts.push(`${s.riser === "up" ? "+" : "-"}${Math.abs(n.z)} m`);

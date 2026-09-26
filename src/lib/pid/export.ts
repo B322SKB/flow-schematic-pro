@@ -4,6 +4,8 @@ import { getSymbol } from "./symbols";
 import { computePipe, circuitTotals } from "./hydraulics";
 import { getMaterial, sizeLabel } from "./catalog";
 import { pipePower, powerTotals } from "./power";
+import { pumpDuty } from "./network";
+import { expansionSizing, volumeTotals } from "./volume";
 import type { Scheme } from "./types";
 
 export const ascii = (s: string) =>
@@ -51,6 +53,8 @@ export function schemeSvgString(svg: SVGSVGElement, pad = 40) {
   const h = Math.max(150, box.height + pad * 2);
   const clone = content.cloneNode(true) as SVGGElement;
   clone.removeAttribute("transform");
+  // elimină ajutoarele de editare (mânere, porturi, tooltip-uri) — nu fac parte din planșă
+  clone.querySelectorAll("[data-ui], title").forEach((el) => el.remove());
   resolveVars(clone);
   const bg = getComputedStyle(document.documentElement).getPropertyValue("--canvas-bg").trim() || "#0b1220";
   const wrap = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -241,6 +245,33 @@ export async function exportSchemePdf(out: SvgOut, coded: SvgOut, scheme: Scheme
     tableWidth: 160,
   });
 
+  // sinteza: traseu critic, pompa, volum de fluid, vas de expansiune
+  const duty = pumpDuty(scheme, fp);
+  const vol = volumeTotals(scheme);
+  const exp = expansionSizing(scheme);
+  const tagOf = (id: string) => scheme.pipes.find((p) => p.id === id)?.tag ?? "";
+  const synth: [string, string][] = [
+    ["Traseu critic", duty.path ? ascii(`${duty.path.pipes.map(tagOf).join(" > ")} -> ${duty.path.endTag}`).slice(0, 90) : "-"],
+    ["dP traseu critic", `${(duty.dpCritical / 1000).toFixed(1)} kPa`],
+    ["Presiune utila modul integrat", `${(duty.integratedHead / 1000).toFixed(0)} kPa`],
+    ["Sarcina pompei exterioare", `${(duty.net / 1000).toFixed(1)} kPa = ${duty.headM.toFixed(1)} mCA (cu marja: ${duty.margin.toFixed(1)} mCA)`],
+    ["Debit total instalatie", `${duty.flow.toFixed(2)} m3/h`],
+    ["Volum fluid conducte / echipamente", `${vol.pipes.toFixed(0)} l / ${vol.equipment.toFixed(0)} l`],
+    ["Volum total instalatie", `${vol.total.toFixed(0)} l`],
+    ["Umplere", `${vol.water.toFixed(0)} l apa + ${vol.glycolPure.toFixed(0)} l glicol pur`],
+    ["Vas expansiune necesar", `V utile ${exp.utilVolume.toFixed(0)} l -> nominal ${exp.nominal} l (p0 ${(exp.p0 - 1).toFixed(1)} / pe ${(exp.pe - 1).toFixed(1)} bar)`],
+    ["Vas expansiune prevazut", `${exp.installed.toFixed(0)} l${exp.ok ? " (acoperitor)" : " (INSUFICIENT)"}`],
+  ];
+  autoTable(doc, {
+    head: [["Sinteza calcul", "Valoare"]],
+    body: synth.map(([k, v]) => [k, v]),
+    styles: { fontSize: 8 },
+    headStyles: { fillColor: [30, 41, 59] },
+    tableWidth: 240,
+  });
+
+
+
   // ultima pagină: desenul cu codurile și tag-urile elementelor
   doc.addPage("a3", "landscape");
   doc.setTextColor(20);
@@ -307,7 +338,8 @@ export function exportSchemeDxf(svg: SVGSVGElement, name: string) {
     e(0, "SEQEND", 8, layer);
   };
   content.querySelectorAll<SVGGraphicsElement>("path,line,rect,circle,ellipse,polyline,polygon,text").forEach((el) => {
-    if (el.closest("title")) return;
+    // fără elemente de interfață: mânere de tragere, porturi, tooltip-uri, selecții
+    if (el.closest("title") || el.closest("[data-ui]")) return;
     const ctm = el.getCTM();
     if (!ctm) return;
     const m = base.multiply(ctm);

@@ -7,7 +7,7 @@ import { getSymbol, syncCustomSymbols, type CustomSymbol, type SymbolType } from
 import type { Pipe, PidNode, Scheme } from "./types";
 import { pipeRoute } from "./hydraulics";
 import { flowFromKw, fluidProps } from "./fluids";
-import { propagateFlows } from "./network";
+import { propagateFlows, totalDemand } from "./network";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 export const PX_PER_M = 40;
@@ -49,7 +49,7 @@ interface State {
   addCustomSymbol: (c: Omit<CustomSymbol, "id">) => void;
   removeCustomSymbol: (id: string) => void;
   newProject: (name?: string, template?: "empty" | "demo" | "ring_dc") => void;
-  applyAutoFlows: () => { updated: number; ambiguous: number };
+  applyAutoFlows: () => { updated: number; ambiguous: number; unresolved: number; demand: number; notes: string[] };
   switchProject: (id: string) => void;
   duplicateProject: (id: string) => void;
   deleteProject: (id: string) => void;
@@ -427,20 +427,25 @@ export const usePid = create<State>()(
           const st = get();
           const fp = fluidProps(st.scheme.fluid, st.scheme.concentration, st.scheme.temperature);
           const flows = propagateFlows(st.scheme, fp);
-          let updated = 0, ambiguous = 0;
+          let updated = 0, ambiguous = 0, unresolved = 0;
+          const notes = new Set<string>();
           patchScheme((s) => ({
             ...s,
             pipes: s.pipes.map((p) => {
               const info = flows.get(p.id);
               if (!info) return p;
+              if (info.reason) notes.add(info.reason);
               if (info.ambiguous) { ambiguous++; return p; }
+              if (info.reason) { unresolved++; return p; }
               if (Math.abs(info.flow - p.flow) < 0.005) return p;
               updated++;
               return { ...p, flow: info.flow, flowMode: "manual" as const };
             }),
           }));
-          return { updated, ambiguous };
+          const demand = Math.round(totalDemand(st.scheme, fp) * 100) / 100;
+          return { updated, ambiguous, unresolved, demand, notes: [...notes] };
         },
+
 
         switchProject: (id) =>
           set((st) => {

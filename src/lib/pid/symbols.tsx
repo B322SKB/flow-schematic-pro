@@ -208,6 +208,8 @@ export function customSymbolDef(c: CustomSymbol): SymbolDef {
     h: 60,
     ports,
     bomGroup: c.category === "Vane" ? "Vane" : c.category === "Fitinguri" ? "Fitinguri" : "Echipamente",
+    ...(c.category === "Echipamente" ? { terminal: true } : {}),
+
     ...(c.dpDefault !== undefined ? { dpDefault: c.dpDefault } : {}),
     ...(c.K !== undefined ? { K: c.K } : {}),
     render: () => (

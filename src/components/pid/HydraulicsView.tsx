@@ -129,7 +129,13 @@ export function HydraulicsView() {
             </p>
             <Button size="sm" className="w-full gap-1.5" onClick={() => {
               const r = applyAutoFlows();
-              toast.success(`${r.updated} tronson(e) actualizate${r.ambiguous ? ` · ${r.ambiguous} tronson(e) de inel rămân manuale` : ""}`);
+              const extra = [
+                r.ambiguous ? `${r.ambiguous} tronson(e) de inel rămân manuale` : "",
+                r.unresolved ? `${r.unresolved} tronson(e) fără legătură la o sursă` : "",
+                ...r.notes,
+              ].filter(Boolean).join(" · ");
+              toast.success(`${r.updated} tronson(e) actualizate · cerere totală ${r.demand} m³/h${extra ? ` · ${extra}` : ""}`);
+
             }}>
               <Sigma className="h-3.5 w-3.5" />Calculează debitele automat
             </Button>

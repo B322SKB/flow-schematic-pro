@@ -1,5 +1,9 @@
-import { useState } from "react";
-import { AlertTriangle, Snowflake } from "lucide-react";
+import { useMemo, useState } from "react";
+import { AlertTriangle, Sigma, Snowflake } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { propagateFlows, pumpDuty } from "@/lib/pid/network";
+import { expansionSizing, volumeTotals } from "@/lib/pid/volume";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
@@ -52,12 +56,16 @@ export function FluidCard() {
   );
 }
 
+function Row({ k, v }: { k: string; v: string }) {
+  return <div className="flex items-center justify-between gap-2 border-b border-border/50 pb-1"><span className="text-muted-foreground">{k}</span><span className="font-mono text-foreground">{v}</span></div>;
+}
+
 function Prop({ k, v }: { k: string; v: string }) {
   return <div className="rounded border bg-muted/40 px-2 py-1.5"><div className="text-muted-foreground">{k}</div><div className="text-foreground">{v}</div></div>;
 }
 
 export function HydraulicsView() {
-  const { scheme, updatePipe, select } = usePid();
+  const { scheme, updatePipe, select, applyAutoFlows } = usePid();
   const [pu, setPu] = useState<PUnit>("kPa");
   const [qu, setQu] = useState<"m3h" | "ls">("m3h");
   const fp = fluidProps(scheme.fluid, scheme.concentration, scheme.temperature);
@@ -71,6 +79,18 @@ export function HydraulicsView() {
   }
   const total = results.reduce((s, x) => s + x.r.dpTotal, 0);
   const warns = results.filter((x) => x.r.velWarn).length;
+  const duty = useMemo(() => pumpDuty(scheme, fp), [scheme, fp]);
+  const auto = useMemo(() => propagateFlows(scheme, fp), [scheme, fp]);
+  const vol = useMemo(() => volumeTotals(scheme), [scheme]);
+  const exp = useMemo(() => expansionSizing(scheme), [scheme]);
+  const critical = duty.path?.pipes ?? [];
+  const critSet = new Set(critical);
+  const tagOf = (id: string) => scheme.pipes.find((p) => p.id === id)?.tag ?? "";
+  const drift = scheme.pipes.filter((p) => {
+    const a = auto.get(p.id);
+    return a && !a.ambiguous && Math.abs(a.flow - p.flow) > 0.05;
+  });
+  const ringPipes = [...auto.entries()].filter(([, v]) => v.ambiguous).map(([id]) => tagOf(id));
 
   return (
     <div className="h-full overflow-auto p-4">
@@ -99,6 +119,69 @@ export function HydraulicsView() {
             ))}
             <div className="flex justify-between border-t pt-2 text-sm font-semibold"><span className="font-sans">Circuit complet</span><span className="text-primary">{fmtP(total, pu, fp.rho)} {pu}</span></div>
             <p className="font-sans text-[11px] text-muted-foreground">Include pierderile liniare, fitingurile, vanele și căderile de presiune ale echipamentelor.</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-sm">Debite automate (însumare la teuri)</CardTitle></CardHeader>
+          <CardContent className="space-y-2 text-xs">
+            <p className="text-muted-foreground">
+              Debitele se însumează de la consumatorii activi spre sursă. Elementele marcate redundant nu intră în calcul.
+            </p>
+            <Button size="sm" className="w-full gap-1.5" onClick={() => {
+              const r = applyAutoFlows();
+              toast.success(`${r.updated} tronson(e) actualizate${r.ambiguous ? ` · ${r.ambiguous} tronson(e) de inel rămân manuale` : ""}`);
+            }}>
+              <Sigma className="h-3.5 w-3.5" />Calculează debitele automat
+            </Button>
+            {drift.length > 0 && (
+              <p className="text-warning">
+                Diferă de cererea consumatorilor: {drift.slice(0, 6).map((p) => p.tag).join(", ")}{drift.length > 6 ? "…" : ""}
+              </p>
+            )}
+            {ringPipes.length > 0 && (
+              <p className="text-muted-foreground">Tronsoane de inel (debit manual): {ringPipes.join(", ")}</p>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-sm">Traseu critic și punct de funcționare</CardTitle></CardHeader>
+          <CardContent className="space-y-2 text-xs">
+            {duty.path ? (
+              <>
+                <p className="font-mono text-[11px] leading-relaxed text-muted-foreground">
+                  {duty.path.pipes.map(tagOf).join(" → ")} → <b className="text-foreground">{duty.path.endTag}</b>
+                </p>
+                <Row k="Δp traseu critic" v={`${fmtP(duty.dpCritical, pu, fp.rho)} ${pu}`} />
+                {duty.integratedHead > 0 && <Row k="Presiune utilă modul integrat" v={`${(duty.integratedHead / 1000).toFixed(0)} kPa`} />}
+                <Row k="Sarcină pompă exterioară" v={`${duty.headM.toFixed(1)} mCA`} />
+                <Row k="Sarcină cu marjă 10%" v={`${duty.margin.toFixed(1)} mCA`} />
+                <Row k="Debit total" v={`${duty.flow.toFixed(2)} m³/h`} />
+                {duty.covered && <Badge className="bg-success text-success-foreground">Modulul hidraulic integrat acoperă circuitul</Badge>}
+                <p className="text-[11px] text-muted-foreground">Traseul critic este evidențiat pe schema de mai jos.</p>
+              </>
+            ) : <p className="text-muted-foreground">Adaugă o sursă (chiller) și conducte pentru a determina traseul critic.</p>}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-sm">Volum fluid și vas de expansiune</CardTitle></CardHeader>
+          <CardContent className="space-y-2 text-xs">
+            <Row k="Volum conducte" v={`${vol.pipes.toFixed(0)} l`} />
+            <Row k="Volum rezervoare" v={`${vol.equipment.toFixed(0)} l`} />
+            <Row k="Volum total" v={`${vol.total.toFixed(0)} l`} />
+            <Row k="Umplere" v={`${vol.water.toFixed(0)} l apă + ${vol.glycolPure.toFixed(0)} l glicol`} />
+            <Row k={`Dilatare ${exp.tMin}…${exp.tMax} °C`} v={`${(exp.expansionFactor * 100).toFixed(2)} % = ${exp.expansionVolume.toFixed(0)} l`} />
+            <Row k="Volum util necesar" v={`${exp.utilVolume.toFixed(0)} l`} />
+            <Row k="Vas recomandat" v={`${exp.nominal} l`} />
+            <Row k="Vas prevăzut în schemă" v={`${exp.installed.toFixed(0)} l`} />
+            {!exp.ok && (
+              <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-2 text-destructive">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                Vasul de expansiune prevăzut este insuficient; recomandat minim {exp.nominal} l.
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Vn = Vu · pe/(pe − p0), cu p0 {(exp.p0 - 1).toFixed(1)} bar și pe {(exp.pe - 1).toFixed(1)} bar suprapresiune.
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -131,8 +214,8 @@ export function HydraulicsView() {
             </TableHeader>
             <TableBody>
               {results.map(({ p, r }) => (
-                <TableRow key={p.id} className="cursor-pointer" onClick={() => select({ kind: "pipe", id: p.id })}>
-                  <TableCell className="whitespace-nowrap"><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: circuitColor(scheme, p.circuit) }} />{p.tag}{p.direct && <span className="ml-1 text-muted-foreground">(direct)</span>}</TableCell>
+                <TableRow key={p.id} className={`cursor-pointer ${critSet.has(p.id) ? "bg-destructive/10" : ""}`} onClick={() => select({ kind: "pipe", id: p.id })}>
+                  <TableCell className="whitespace-nowrap"><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: circuitColor(scheme, p.circuit) }} />{p.tag}{p.direct && <span className="ml-1 text-muted-foreground">(direct)</span>}{critSet.has(p.id) && <span className="ml-1 text-destructive">★</span>}</TableCell>
                   <TableCell className="whitespace-nowrap font-sans">{getMaterial(p.material).short} {sizeLabel(p.material, p.dn)}</TableCell>
                   <TableCell>{r.L.toFixed(1)}</TableCell>
                   <TableCell>
@@ -163,7 +246,7 @@ export function HydraulicsView() {
         <CardHeader className="pb-3"><CardTitle className="text-sm">Schemă cu coduri pentru trasabilitatea calculului</CardTitle></CardHeader>
         <CardContent>
           <div className="h-[560px] overflow-hidden rounded-md border">
-            <PidCanvas readOnly showTags />
+            <PidCanvas readOnly showTags critical={critical} />
           </div>
         </CardContent>
       </Card>

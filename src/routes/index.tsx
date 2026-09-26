@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { FilePlus2, RefreshCcw, Tags, Workflow, Gauge, ClipboardList, FileText, Image as ImageIcon, FileCode2 } from "lucide-react";
+import { FilePlus2, RefreshCcw, Sigma, Tags, Workflow, Gauge, ClipboardList, FileText, Image as ImageIcon, FileCode2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,7 +41,7 @@ function Index() {
 }
 
 function App() {
-  const { scheme, setScheme, reset, retag } = usePid();
+  const { scheme, setScheme, reset, retag, applyAutoFlows } = usePid();
   const svgRef = useRef<SVGSVGElement>(null);
   const fp = fluidProps(scheme.fluid, scheme.concentration, scheme.temperature);
   const results = scheme.pipes.map((p) => computePipe(p, scheme, fp));
@@ -120,6 +120,11 @@ function App() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <Button size="sm" variant="ghost" title="Însumează automat debitele de la consumatori spre sursă"
+            onClick={() => {
+              const r = applyAutoFlows();
+              toast.success(`${r.updated} tronson(e) actualizate${r.ambiguous ? ` · ${r.ambiguous} de inel rămân manuale` : ""}`);
+            }}><Sigma className="h-4 w-4" /></Button>
           <Button size="sm" variant="ghost" onClick={retag} title="Re-numerotează tag-urile"><Tags className="h-4 w-4" /></Button>
           <Button size="sm" variant="ghost" onClick={() => confirm("Reîncarci schema demo în acest proiect?") && reset()} title="Schemă demo"><RefreshCcw className="h-4 w-4" /></Button>
           <Button size="sm" variant="ghost" onClick={() => confirm("Golești schema din acest proiect?") && reset(true)} title="Golește schema"><FilePlus2 className="h-4 w-4" /></Button>

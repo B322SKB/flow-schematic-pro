@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { circuitColor } from "@/lib/pid/catalog";
 import { pipeCrossings, pipeRoute, portPos } from "@/lib/pid/hydraulics";
 import { usePid } from "@/lib/pid/store";
@@ -20,9 +20,11 @@ export function nodeDn(n: PidNode, scheme: Scheme) {
   return n.dn ?? scheme.pipes.find((p) => p.from.node === n.id || p.to.node === n.id)?.dn;
 }
 
-export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false, hideCodes = false }: {
+export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false, hideCodes = false, critical }: {
   svgRef?: React.RefObject<SVGSVGElement | null>; readOnly?: boolean; showTags?: boolean; hideCodes?: boolean;
+  critical?: string[] | undefined;
 }) {
+  const criticalSet = useMemo(() => new Set(critical ?? []), [critical]);
   const { scheme, selected, multi, grid, select, setMulti, updateNode, moveNodes, addPipe, addNode, removeSelected, duplicateNodes, updatePipe, insertOnPipe } = usePid();
   const innerRef = useRef<SVGSVGElement>(null);
   const svgRef = outerRef ?? innerRef;
@@ -233,6 +235,7 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
             {scheme.pipes.map((p) => (
               <PipeView key={p.id} pipe={p} scheme={scheme} crossings={crossings} showTags={showTags}
                 selected={selected?.kind === "pipe" && selected.id === p.id}
+                critical={criticalSet.has(p.id)}
                 onSelect={() => select({ kind: "pipe", id: p.id })}
                 onSegDown={readOnly ? undefined : (e, i, pts) => {
                   e.stopPropagation();
@@ -272,14 +275,20 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
                     }}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <rect x={-4} y={-4} width={s.w + 8} height={s.h + 8} fill="transparent"
+                    <rect data-ui="1" x={-4} y={-4} width={s.w + 8} height={s.h + 8} fill="transparent"
                       stroke={isSel ? "var(--primary)" : "none"} strokeDasharray="4 3" strokeWidth={1} />
                     {s.render()}
+                    {s.source && n.intPump && (
+                      <g pointerEvents="none">
+                        <circle cx={s.w - 16} cy={s.h - 14} r={7} fill="var(--canvas-bg)" stroke="currentColor" strokeWidth={1.2} />
+                        <text x={s.w - 16} y={s.h - 11} textAnchor="middle" fontSize={8} fontWeight={700} fontFamily="var(--app-mono)" fill="currentColor">P</text>
+                      </g>
+                    )}
                     {!readOnly && s.ports.map((pt) => {
                       const used = usedPorts.has(`${n.id}:${pt.id}`);
                       const act = pending?.node === n.id && pending.port === pt.id;
                       return (
-                        <circle key={pt.id} cx={pt.x} cy={pt.y} r={act ? 5.5 : used ? 2.5 : 4}
+                        <circle key={pt.id} data-ui="1" cx={pt.x} cy={pt.y} r={act ? 5.5 : used ? 2.5 : 4}
                           fill={act ? "var(--primary)" : used ? "var(--canvas-ink)" : "var(--canvas-bg)"}
                           stroke="var(--primary)" strokeWidth={1.2} style={{ cursor: "crosshair" }} data-port="1"
                           onPointerDown={(e) => onPortClick(e, n.id, pt.id)} onClick={(e) => e.stopPropagation()}>
@@ -329,7 +338,7 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
                     {(s.terminal || s.source) && n.redundant && (
                       <text x={0} y={s.h / 2 + (showTags ? 25 : 12)} textAnchor="middle" fontSize={9} fontFamily="var(--app-mono)" fill="var(--canvas-ink)" pointerEvents="none">REDUNDANT</text>
                     )}
-                    {incomplete && !readOnly && <circle cx={s.w / 2 + 6} cy={-s.h / 2 - 6} r={3.5} fill="var(--destructive)" opacity={0.85} pointerEvents="none" />}
+                    {incomplete && !readOnly && <circle data-ui="1" cx={s.w / 2 + 6} cy={-s.h / 2 - 6} r={3.5} fill="var(--destructive)" opacity={0.85} pointerEvents="none" />}
                   </g>
                 </g>
               );
@@ -365,9 +374,10 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
   );
 }
 
-function PipeView({ pipe, scheme, crossings, selected, onSelect, showTags, onSegDown }: {
+function PipeView({ pipe, scheme, crossings, selected, onSelect, showTags, onSegDown, critical = false }: {
   pipe: Pipe; scheme: Scheme; crossings: { x: number; y: number; pipeId: string }[]; selected: boolean; onSelect: () => void; showTags: boolean;
   onSegDown?: ((e: React.PointerEvent, i: number, pts: { x: number; y: number }[]) => void) | undefined;
+  critical?: boolean;
 }) {
   const pts = pipeRoute(pipe, scheme);
   if (pts.length < 2) return null;
@@ -379,6 +389,7 @@ function PipeView({ pipe, scheme, crossings, selected, onSelect, showTags, onSeg
     return (
       <g onPointerDown={(e) => { e.stopPropagation(); onSelect(); }} onClick={(e) => e.stopPropagation()} style={{ cursor: "pointer" }}>
         <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={color} strokeWidth={w} />
+        {critical && <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--destructive)" strokeWidth={w + 7} strokeOpacity={0.3} pointerEvents="none" />}
         <circle cx={(a.x + b.x) / 2} cy={(a.y + b.y) / 2} r={selected ? 5 : 3} fill={selected ? "var(--primary)" : color} />
       </g>
     );
@@ -414,14 +425,15 @@ function PipeView({ pipe, scheme, crossings, selected, onSelect, showTags, onSeg
   return (
     <g data-layer={`CONDUCTE_${pipe.circuit}`} onPointerDown={(e) => { e.stopPropagation(); onSelect(); }} onClick={(e) => e.stopPropagation()} style={{ cursor: "pointer" }}
       opacity={pipe.disabled ? 0.4 : 1}>
-      <path d={d} fill="none" stroke="transparent" strokeWidth={14} />
-      {selected && <path d={d} fill="none" stroke="var(--primary)" strokeWidth={w + 5} strokeOpacity={0.35} />}
+      <path data-ui="1" d={d} fill="none" stroke="transparent" strokeWidth={14} />
+      {critical && <path d={d} fill="none" stroke="var(--destructive)" strokeWidth={w + 7} strokeOpacity={0.3} strokeLinejoin="round" pointerEvents="none" />}
+      {selected && <path data-ui="1" d={d} fill="none" stroke="var(--primary)" strokeWidth={w + 5} strokeOpacity={0.35} />}
       <path d={d} fill="none" stroke={color} strokeWidth={w} strokeLinejoin="round" strokeDasharray={pipe.disabled ? "8 6" : undefined} />
       {selected && onSegDown && pts.slice(1).map((p, k) => {
         const q = pts[k]!, hz = Math.abs(p.y - q.y) < 1;
         if (Math.hypot(p.x - q.x, p.y - q.y) < 4) return null;
         return (
-          <g key={k}>
+          <g key={k} data-ui="1">
             <line x1={q.x} y1={q.y} x2={p.x} y2={p.y} stroke="transparent" strokeWidth={12}
               style={{ cursor: hz ? "ns-resize" : "ew-resize" }} onPointerDown={(e) => onSegDown(e, k + 1, pts)} />
             <rect x={(p.x + q.x) / 2 - 4} y={(p.y + q.y) / 2 - 4} width={8} height={8} fill="var(--primary)" stroke="var(--canvas-bg)"

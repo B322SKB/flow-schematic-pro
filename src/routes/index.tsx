@@ -41,7 +41,7 @@ function Index() {
 }
 
 function App() {
-  const { scheme, setScheme, reset, retag } = usePid();
+  const { scheme, setScheme, reset, retag, applyAutoFlows } = usePid();
   const svgRef = useRef<SVGSVGElement>(null);
   const fp = fluidProps(scheme.fluid, scheme.concentration, scheme.temperature);
   const results = scheme.pipes.map((p) => computePipe(p, scheme, fp));

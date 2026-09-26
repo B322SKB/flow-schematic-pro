@@ -1,6 +1,9 @@
 import { CIRCUIT_IDS, CIRCUITS, circuitColor, type CircuitId } from "./catalog";
 import { FLUID_LABEL, fluidProps } from "./fluids";
 import { getSymbol } from "./symbols";
+import { computePipe, circuitTotals } from "./hydraulics";
+import { getMaterial, sizeLabel } from "./catalog";
+import { pipePower, powerTotals } from "./power";
 import type { Scheme } from "./types";
 
 export const ascii = (s: string) =>
@@ -201,6 +204,42 @@ export async function exportSchemePdf(svg: SVGSVGElement, scheme: Scheme, stats:
   doc.setFontSize(6.5);
   doc.setTextColor(130);
   doc.text("Generat cu P&ID Studio - calcul Darcy-Weisbach / Colebrook-White", cx + 3, baseY + 63);
+
+  // pagina 2+: calculul hidraulic aferent desenului
+  const autoTable = (await import("jspdf-autotable")).default;
+  doc.addPage("a3", "landscape");
+  doc.setTextColor(20);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.text(ascii(`Calcul hidraulic - ${scheme.name}`), M + 4, M + 10);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  const pw = powerTotals(scheme);
+  doc.text(ascii(`Fluid: ${FLUID_LABEL[scheme.fluid]}${scheme.fluid !== "water" ? ` ${scheme.concentration}%` : ""} la ${scheme.temperature} grd C · rho ${fp.rho.toFixed(1)} kg/m3 · nu ${(fp.nu * 1e6).toFixed(3)} mm2/s`), M + 4, M + 17);
+  doc.text(ascii(`Putere sensibila instalata ${pw.sensInstalled.toFixed(1)} kW · Putere sensibila activa ${pw.sensActive.toFixed(1)} kW · Putere necesara ${pw.required.toFixed(1)} kW · Putere furnizata ${pw.supplied.toFixed(1)} kW${pw.deficit ? " (INSUFICIENTA)" : ""}`), M + 4, M + 23);
+  const off = scheme.pipes.filter((p) => p.disabled).map((p) => p.tag);
+  if (off.length) doc.text(ascii(`Tronsoane scoase din functiune (scenariu inel): ${off.join(", ")}`), M + 4, M + 29);
+  const active = scheme.pipes.filter((p) => !p.disabled);
+  autoTable(doc, {
+    startY: M + 33,
+    head: [["Tag", "Material / DN", "L [m]", "Q [m3/h]", "P [kW]", "v [m/s]", "Re", "lambda", "R [Pa/m]", "Suma K", "dp lin [kPa]", "dp loc [kPa]", "dp elem [kPa]", "dp total [kPa]"]],
+    body: active.map((p) => {
+      const r = computePipe(p, scheme, fp);
+      return [p.tag + (p.direct ? " (direct)" : ""), ascii(`${getMaterial(p.material).short} ${sizeLabel(p.material, p.dn)}`), r.L.toFixed(1), p.flow.toFixed(2),
+        pipePower(p, scheme, fp).toFixed(1), r.v.toFixed(2) + (r.velWarn ? " !" : ""), Math.round(r.Re).toString(), r.f.toFixed(4), r.R.toFixed(0), r.Ksum.toFixed(2),
+        (r.dpLin / 1000).toFixed(2), (r.dpLoc / 1000).toFixed(2), (r.dpComp / 1000).toFixed(2), (r.dpTotal / 1000).toFixed(2)];
+    }),
+    styles: { fontSize: 7.5 },
+    headStyles: { fillColor: [30, 41, 59] },
+  });
+  const tot = circuitTotals(scheme, fp);
+  autoTable(doc, {
+    head: [["Circuit", "Segmente", "Lungime [m]", "dp [kPa]"]],
+    body: [...tot.entries()].map(([c, v]) => [ascii(CIRCUITS[c].name), String(v.n), v.L.toFixed(1), (v.dp / 1000).toFixed(2)]),
+    styles: { fontSize: 8 },
+    headStyles: { fillColor: [30, 41, 59] },
+    tableWidth: 160,
+  });
 
   doc.save(`${slug(scheme.name)}-schema.pdf`);
 }

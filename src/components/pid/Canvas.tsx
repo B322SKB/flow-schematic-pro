@@ -124,7 +124,7 @@ export function PidCanvas() {
             <path d={`M${pendingPos.x} ${pendingPos.y} H${mouse.x} V${mouse.y}`} fill="none" stroke="var(--primary)" strokeWidth={2} strokeDasharray="6 4" pointerEvents="none" />
           )}
           {scheme.nodes.map((n) => {
-            const s = SYMBOLS[n.type];
+            const s = SYMBOLS[n.type]!;
             const isSel = selected?.kind === "node" && selected.id === n.id;
             return (
               <g key={n.id} transform={`translate(${n.x},${n.y}) rotate(${n.rotation})`}>
@@ -185,10 +185,10 @@ function PipeView({ pipe, selected, onSelect }: { pipe: Pipe; selected: boolean;
   // longest segment for arrow + label
   let best = 0, bi = 1;
   for (let i = 1; i < pts.length; i++) {
-    const L = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    const L = Math.hypot(pts[i]!.x - pts[i - 1]!.x, pts[i]!.y - pts[i - 1]!.y);
     if (L > best) { best = L; bi = i; }
   }
-  const a = pts[bi - 1], b = pts[bi];
+  const a = pts[bi - 1]!, b = pts[bi]!;
   const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
   const ang = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
   const horiz = Math.abs(b.y - a.y) < 1;

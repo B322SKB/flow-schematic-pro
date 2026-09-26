@@ -26,11 +26,11 @@ export function FluidCard() {
         </Field>
         {scheme.fluid !== "water" && (
           <Field label={`Concentrație: ${scheme.concentration}%`}>
-            <Slider min={0} max={60} step={1} value={[scheme.concentration]} onValueChange={([v]) => setScheme({ concentration: v })} />
+            <Slider min={0} max={60} step={1} value={[scheme.concentration]} onValueChange={([v]) => setScheme({ concentration: v ?? 0 })} />
           </Field>
         )}
         <Field label={`Temperatură: ${scheme.temperature} °C`}>
-          <Slider min={-20} max={90} step={1} value={[scheme.temperature]} onValueChange={([v]) => setScheme({ temperature: v })} />
+          <Slider min={-20} max={90} step={1} value={[scheme.temperature]} onValueChange={([v]) => setScheme({ temperature: v ?? 0 })} />
         </Field>
         <div className="grid grid-cols-2 gap-2 font-mono text-xs">
           <Prop k="ρ" v={`${fp.rho.toFixed(1)} kg/m³`} />
@@ -123,7 +123,7 @@ export function HydraulicsView() {
                   <TableCell className={r.velWarn === "high" ? "text-destructive" : r.velWarn === "low" ? "text-warning" : ""}>
                     {r.v.toFixed(2)}{r.velWarn && <AlertTriangle className="ml-1 inline h-3 w-3" />}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap">{Math.round(r.Re)} <span className="text-muted-foreground">{r.regime[0].toUpperCase()}</span></TableCell>
+                  <TableCell className="whitespace-nowrap">{Math.round(r.Re)} <span className="text-muted-foreground">{r.regime.charAt(0).toUpperCase()}</span></TableCell>
                   <TableCell>{r.f.toFixed(4)}</TableCell>
                   <TableCell>{r.R.toFixed(0)}</TableCell>
                   <TableCell>{r.Ksum.toFixed(2)}</TableCell>

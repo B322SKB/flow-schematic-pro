@@ -53,8 +53,8 @@
   --color-chart-5: var(--chart-5);
   --color-warning: var(--warning);
   --color-success: var(--success);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-mono);
+  --font-sans: var(--app-sans);
+  --font-mono: var(--app-mono);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -111,8 +111,8 @@
   --pipe-cw: oklch(0.75 0.12 200);
   --pipe-hw: oklch(0.72 0.18 50);
   --pipe-other: oklch(0.7 0.02 240);
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --app-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --app-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
 @layer base {
@@ -123,6 +123,6 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-    font-family: var(--font-sans);
+    font-family: var(--app-sans);
   }
 }

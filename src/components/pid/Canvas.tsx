@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { circuitColor } from "@/lib/pid/catalog";
 import { pipeCrossings, pipeRoute, portPos } from "@/lib/pid/hydraulics";
 import { usePid } from "@/lib/pid/store";
-import { getSymbol, SYMBOLS } from "@/lib/pid/symbols";
+import { getSymbol } from "@/lib/pid/symbols";
 import type { Pipe, Scheme } from "@/lib/pid/types";
 import { ZoomIn, ZoomOut, Maximize, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";

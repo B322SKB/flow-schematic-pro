@@ -214,8 +214,8 @@ export function HydraulicsView() {
             </TableHeader>
             <TableBody>
               {results.map(({ p, r }) => (
-                <TableRow key={p.id} className="cursor-pointer" onClick={() => select({ kind: "pipe", id: p.id })}>
-                  <TableCell className="whitespace-nowrap"><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: circuitColor(scheme, p.circuit) }} />{p.tag}{p.direct && <span className="ml-1 text-muted-foreground">(direct)</span>}</TableCell>
+                <TableRow key={p.id} className={`cursor-pointer ${critSet.has(p.id) ? "bg-destructive/10" : ""}`} onClick={() => select({ kind: "pipe", id: p.id })}>
+                  <TableCell className="whitespace-nowrap"><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: circuitColor(scheme, p.circuit) }} />{p.tag}{p.direct && <span className="ml-1 text-muted-foreground">(direct)</span>}{critSet.has(p.id) && <span className="ml-1 text-destructive">★</span>}</TableCell>
                   <TableCell className="whitespace-nowrap font-sans">{getMaterial(p.material).short} {sizeLabel(p.material, p.dn)}</TableCell>
                   <TableCell>{r.L.toFixed(1)}</TableCell>
                   <TableCell>

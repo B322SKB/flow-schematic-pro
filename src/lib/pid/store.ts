@@ -189,7 +189,7 @@ export const usePid = create<State>()(
           const st = get();
           const sym = getSymbol(type);
           const node: PidNode = {
-            id: uid(), type, x: Math.round(x / 10) * 10, y: Math.round(y / 10) * 10, rotation: 0,
+            id: uid(), type, x: Math.round(x / st.grid) * st.grid, y: Math.round(y / st.grid) * st.grid, rotation: 0,
             tag: nextTag(sym.prefix, st.scheme.nodes.map((n) => n.tag)), dpFixed: sym.dpDefault,
             ...(sym.riser ? { z: 1 } : {}),
           };

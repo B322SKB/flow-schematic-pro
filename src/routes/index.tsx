@@ -123,7 +123,12 @@ function App() {
           <Button size="sm" variant="ghost" title="Însumează automat debitele de la consumatori spre sursă"
             onClick={() => {
               const r = applyAutoFlows();
-              toast.success(`${r.updated} tronson(e) actualizate${r.ambiguous ? ` · ${r.ambiguous} de inel rămân manuale` : ""}`);
+              const extra = [
+                r.ambiguous ? `${r.ambiguous} de inel rămân manuale` : "",
+                r.unresolved ? `${r.unresolved} fără legătură la sursă` : "",
+              ].filter(Boolean).join(" · ");
+              toast.success(`${r.updated} tronson(e) actualizate · cerere totală ${r.demand} m³/h${extra ? ` · ${extra}` : ""}`);
+
             }}><Sigma className="h-4 w-4" /></Button>
           <Button size="sm" variant="ghost" onClick={retag} title="Re-numerotează tag-urile"><Tags className="h-4 w-4" /></Button>
           <Button size="sm" variant="ghost" onClick={() => confirm("Reîncarci schema demo în acest proiect?") && reset()} title="Schemă demo"><RefreshCcw className="h-4 w-4" /></Button>

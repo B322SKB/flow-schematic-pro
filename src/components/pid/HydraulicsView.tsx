@@ -56,6 +56,10 @@ export function FluidCard() {
   );
 }
 
+function Row({ k, v }: { k: string; v: string }) {
+  return <div className="flex items-center justify-between gap-2 border-b border-border/50 pb-1"><span className="text-muted-foreground">{k}</span><span className="font-mono text-foreground">{v}</span></div>;
+}
+
 function Prop({ k, v }: { k: string; v: string }) {
   return <div className="rounded border bg-muted/40 px-2 py-1.5"><div className="text-muted-foreground">{k}</div><div className="text-foreground">{v}</div></div>;
 }

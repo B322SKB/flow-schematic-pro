@@ -427,20 +427,25 @@ export const usePid = create<State>()(
           const st = get();
           const fp = fluidProps(st.scheme.fluid, st.scheme.concentration, st.scheme.temperature);
           const flows = propagateFlows(st.scheme, fp);
-          let updated = 0, ambiguous = 0;
+          let updated = 0, ambiguous = 0, unresolved = 0;
+          const notes = new Set<string>();
           patchScheme((s) => ({
             ...s,
             pipes: s.pipes.map((p) => {
               const info = flows.get(p.id);
               if (!info) return p;
+              if (info.reason) notes.add(info.reason);
               if (info.ambiguous) { ambiguous++; return p; }
+              if (info.reason) { unresolved++; return p; }
               if (Math.abs(info.flow - p.flow) < 0.005) return p;
               updated++;
               return { ...p, flow: info.flow, flowMode: "manual" as const };
             }),
           }));
-          return { updated, ambiguous };
+          const demand = Math.round(totalDemand(st.scheme, fp) * 100) / 100;
+          return { updated, ambiguous, unresolved, demand, notes: [...notes] };
         },
+
 
         switchProject: (id) =>
           set((st) => {

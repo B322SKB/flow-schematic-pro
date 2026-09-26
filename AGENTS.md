@@ -8,3 +8,6 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+- P&ID domain logic lives in src/lib/pid (catalog, fluids, hydraulics, bom, symbols, zustand store persisted to localStorage) — keeps calculations UI-independent and testable.
+- Editor route renders client-only after mount — the persisted store and SVG canvas depend on browser state.

@@ -24,6 +24,7 @@ export function buildBom(scheme: Scheme): BomRow[] {
   };
 
   for (const p of scheme.pipes) {
+    if (p.direct) continue;
     const m = getMaterial(p.material);
     const size = sizeLabel(p.material, p.dn);
     const jl = JOINT_LABEL[p.joint];
@@ -54,7 +55,10 @@ export function buildBom(scheme: Scheme): BomRow[] {
     const dn = n.dn ?? pipe?.dn;
     const specParts: string[] = [];
     if (s.bomGroup === "Echipamente") {
+      if (n.kwSens) specParts.push(`${n.kwSens} kW sensibil`);
       if (n.kw) specParts.push(`${n.kw} kW`);
+      if (n.volume) specParts.push(`${n.volume} l`);
+      if (s.terminal || s.source) specParts.push(n.redundant ? "redundant" : "activ");
       if (n.flow) specParts.push(`${n.flow} m³/h`);
       if (n.dpFixed) specParts.push(`Δp ${n.dpFixed} kPa`);
       if (n.note) specParts.push(n.note);

@@ -235,7 +235,7 @@ export async function exportSchemePdf(svg: SVGSVGElement, scheme: Scheme, stats:
   const tot = circuitTotals(scheme, fp);
   autoTable(doc, {
     head: [["Circuit", "Segmente", "Lungime [m]", "dp [kPa]"]],
-    body: [...tot.entries()].map(([c, v]) => [ascii(CIRCUITS[c].name), String(v.n), v.L.toFixed(1), (v.dp / 1000).toFixed(2)]),
+    body: [...tot.entries()].map(([c, v]) => [ascii(CIRCUITS[c as CircuitId].name), String(v.n), v.L.toFixed(1), (v.dp / 1000).toFixed(2)]),
     styles: { fontSize: 8 },
     headStyles: { fillColor: [30, 41, 59] },
     tableWidth: 160,

@@ -242,7 +242,7 @@ export function HydraulicsView() {
         <CardHeader className="pb-3"><CardTitle className="text-sm">Schemă cu coduri pentru trasabilitatea calculului</CardTitle></CardHeader>
         <CardContent>
           <div className="h-[560px] overflow-hidden rounded-md border">
-            <PidCanvas readOnly showTags />
+            <PidCanvas readOnly showTags critical={critical} />
           </div>
         </CardContent>
       </Card>

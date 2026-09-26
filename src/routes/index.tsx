@@ -16,6 +16,7 @@ import { usePid } from "@/lib/pid/store";
 import { CIRCUITS, CIRCUIT_IDS, circuitColor } from "@/lib/pid/catalog";
 import { fluidProps } from "@/lib/pid/fluids";
 import { computePipe } from "@/lib/pid/hydraulics";
+import { powerTotals } from "@/lib/pid/power";
 import { exportSchemePdf, exportSchemePng, exportSchemeSvg } from "@/lib/pid/export";
 
 export const Route = createFileRoute("/")({
@@ -50,8 +51,13 @@ function App() {
     flowMax: scheme.pipes.reduce((m, p) => Math.max(m, p.flow), 0),
     lengthTotal: results.reduce((s, r) => s + r.L, 0),
   };
+  const pw = powerTotals(scheme);
+  const [exporting, setExporting] = useState(false);
   const run = async (fn: () => unknown, label: string) => {
+    setExporting(true);
+    await new Promise((r) => setTimeout(r, 80)); // desenul cu coduri pentru export
     try { await fn(); toast.success(`${label} generat`); } catch (e) { console.error(e); toast.error(`${label} nu a putut fi generat`); }
+    finally { setExporting(false); }
   };
 
   return (
@@ -68,9 +74,19 @@ function App() {
           <TabsTrigger value="bom"><ClipboardList className="mr-1.5 h-4 w-4" />BOM / MTO</TabsTrigger>
         </TabsList>
         <SystemDialog />
-        <div className="ml-auto hidden items-center gap-4 font-mono text-xs text-muted-foreground xl:flex">
-          <span>{scheme.nodes.length} elemente · {scheme.pipes.length} segmente · {stats.lengthTotal.toFixed(1)} m</span>
-          <span className="text-primary">Δp total {stats.dpTotal.toFixed(1)} kPa</span>
+        <div className="ml-auto hidden flex-col items-end gap-0.5 font-mono text-[11px] text-muted-foreground xl:flex">
+          <div className="flex gap-4">
+            <span>{scheme.nodes.length} elemente · {scheme.pipes.length} segmente · {stats.lengthTotal.toFixed(1)} m</span>
+            <span className="text-primary">Δp total {stats.dpTotal.toFixed(1)} kPa</span>
+          </div>
+          <div className="flex gap-3">
+            <span title="Suma puterilor sensibile ale echipamentelor terminale active și redundante">P sens. instalată <b className="text-foreground">{pw.sensInstalled.toFixed(1)} kW</b></span>
+            <span title="Suma puterilor sensibile ale echipamentelor terminale active">P sens. <b className="text-foreground">{pw.sensActive.toFixed(1)} kW</b></span>
+            <span title="Suma puterilor echipamentelor terminale active">P necesară <b className="text-foreground">{pw.required.toFixed(1)} kW</b></span>
+            <span title="Suma puterilor chillerelor active" className={pw.deficit ? "rounded bg-destructive/15 px-1 text-destructive" : ""}>
+              P furnizată <b className={pw.deficit ? "text-destructive" : "text-foreground"}>{pw.supplied.toFixed(1)} kW</b>
+            </span>
+          </div>
         </div>
         <div className="flex gap-1">
           <ProjectsDialog />
@@ -100,7 +116,7 @@ function App() {
         <div className="grid h-full grid-cols-[230px_1fr_310px]">
           <Palette />
           <div className="relative min-w-0">
-            <PidCanvas svgRef={svgRef} />
+            <PidCanvas svgRef={svgRef} showTags={exporting} />
             <div className="pointer-events-none absolute left-3 top-3 flex max-w-[60%] flex-wrap gap-2 rounded-md border bg-card/90 px-3 py-1.5 text-[11px] backdrop-blur">
               {CIRCUIT_IDS.map((c) => (
                 <span key={c} className="flex items-center gap-1"><span className="h-0.5 w-4" style={{ background: circuitColor(scheme, c) }} />{CIRCUITS[c].name}</span>

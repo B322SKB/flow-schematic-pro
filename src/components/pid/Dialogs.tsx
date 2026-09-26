@@ -143,12 +143,32 @@ export function CustomSymbolDialog() {
             <Field label="Cădere presiune (kPa)"><Input type="number" className="h-8" value={f.dpDefault ?? 0} onChange={(e) => setF({ ...f, dpDefault: +e.target.value })} /></Field>
             <Field label="Putere (kW)"><Input type="number" className="h-8" value={f.kw ?? 0} onChange={(e) => setF({ ...f, kw: +e.target.value })} /></Field>
           </div>
+          <Field label="Desen propriu (SVG, PNG sau JPG, opțional)">
+            <div className="flex items-center gap-2">
+              <Input type="file" accept="image/svg+xml,image/png,image/jpeg" className="h-8 text-xs"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (file.size > 400_000) { toast.error("Imaginea depășește 400 KB."); return; }
+                  const rd = new FileReader();
+                  rd.onload = () => setF((x) => ({ ...x, image: String(rd.result) }));
+                  rd.readAsDataURL(file);
+                }} />
+              {f.image && (
+                <>
+                  <img src={f.image} alt="previzualizare" className="h-10 w-16 rounded border bg-muted object-contain" />
+                  <Button size="icon" variant="ghost" onClick={() => setF((x) => ({ ...x, image: undefined }))}><Trash2 className="h-3.5 w-3.5" /></Button>
+                </>
+              )}
+            </div>
+          </Field>
           <Button className="w-full" onClick={save}>Adaugă în bibliotecă</Button>
           {scheme.customSymbols.length > 0 && (
             <div className="space-y-1.5 border-t pt-3">
               <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Elemente proprii</div>
               {scheme.customSymbols.map((c) => (
                 <div key={c.id} className="flex items-center gap-2 rounded border px-2 py-1 text-sm">
+                  {c.image && <img src={c.image} alt="" className="h-6 w-8 object-contain" />}
                   <span className="font-mono text-xs text-primary">{c.code}</span>
                   <span className="flex-1 truncate">{c.name}</span>
                   <Button size="icon" variant="ghost" onClick={() => removeCustomSymbol(c.id)}><Trash2 className="h-3.5 w-3.5" /></Button>

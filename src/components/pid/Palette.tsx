@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { customSymbolDef, SYMBOL_LIST, type SymbolCategory, type SymbolDef } from "@/lib/pid/symbols";
 import { usePid } from "@/lib/pid/store";
 import { CustomSymbolDialog } from "./Dialogs";
@@ -21,13 +22,16 @@ export function Palette() {
         <CustomSymbolDialog />
       </div>
       <ScrollArea className="flex-1">
-        <div className="space-y-4 p-3">
+        <Accordion type="multiple" key={q ? "q" : "n"} defaultValue={q ? CATS : ["Echipamente"]} className="px-3 pb-3">
           {CATS.map((c) => {
             const items = list.filter((s) => s.category === c);
             if (!items.length) return null;
             return (
-              <div key={c}>
-                <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-primary">{c}</div>
+              <AccordionItem key={c} value={c}>
+                <AccordionTrigger className="py-2.5 text-[11px] font-medium uppercase tracking-wider text-primary hover:no-underline">
+                  {c} <span className="ml-auto mr-2 font-mono text-muted-foreground">{items.length}</span>
+                </AccordionTrigger>
+                <AccordionContent>
                 <div className="grid grid-cols-2 gap-1.5">
                   {items.map((s) => {
                     const scale = Math.min(40 / s.w, 40 / s.h, 1);
@@ -50,10 +54,11 @@ export function Palette() {
                     );
                   })}
                 </div>
-              </div>
+                </AccordionContent>
+              </AccordionItem>
             );
           })}
-        </div>
+        </Accordion>
       </ScrollArea>
     </div>
   );

@@ -17,6 +17,11 @@ export interface PidNode {
   flow?: number | undefined; // m3/h (din kW sau manual)
   z?: number | undefined; // cotă urcare/coborâre (m)
   note?: string | undefined;
+  kwSens?: number | undefined; // putere sensibilă (kW) – echipamente terminale
+  redundant?: boolean | undefined; // true = redundant, altfel activ
+  volume?: number | undefined; // litri – rezervor tampon / vas expansiune
+  codeDx?: number | undefined; // deplasare etichetă cod pe desen
+  codeDy?: number | undefined;
 }
 
 export interface Pipe {
@@ -35,6 +40,8 @@ export interface Pipe {
   deltaT?: number | undefined;
   routing: "auto" | "hv" | "vh";
   fittings: Partial<Record<FittingId, number>>;
+  direct?: boolean | undefined; // legătură directă între elemente (fără țeavă)
+  disabled?: boolean | undefined; // tronson scos din funcțiune (scenariu inel)
 }
 
 export interface Scheme {

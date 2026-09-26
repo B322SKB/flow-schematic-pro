@@ -93,9 +93,9 @@ export function computePipe(pipe: Pipe, scheme: Scheme, fp: FluidProps): PipeRes
   const dyn = (fp.rho * v * v) / 2;
   const R = (f / d) * dyn;
   const rise = riserRise(pipe, scheme);
-  const L = pipe.length + Math.abs(rise);
+  const L = pipe.direct ? 0 : pipe.length + Math.abs(rise);
   const dpLin = R * L;
-  let Ksum = autoBends(pipe, scheme) * fittingK("elbow90", pipe.joint);
+  let Ksum = pipe.direct ? 0 : autoBends(pipe, scheme) * fittingK("elbow90", pipe.joint);
   for (const [k, n] of Object.entries(pipe.fittings)) Ksum += (n ?? 0) * fittingK(k as FittingId, pipe.joint);
   // components whose inlet ("a"/first port) is this pipe's destination contribute
   let Kcomp = 0;
@@ -131,6 +131,7 @@ export function pipeCrossings(scheme: Scheme) {
   type Seg = { a: { x: number; y: number }; b: { x: number; y: number }; id: string; horiz: boolean };
   const segs: Seg[] = [];
   for (const p of scheme.pipes) {
+    if (p.direct) continue;
     const pts = pipeRoute(p, scheme);
     for (let i = 1; i < pts.length; i++) {
       const a = pts[i - 1]!, b = pts[i]!;
@@ -156,6 +157,7 @@ export function pipeCrossings(scheme: Scheme) {
 export function circuitTotals(scheme: Scheme, fp: FluidProps) {
   const map = new Map<string, { L: number; dp: number; n: number }>();
   for (const p of scheme.pipes) {
+    if (p.disabled) continue;
     const r = computePipe(p, scheme, fp);
     const c = map.get(p.circuit) ?? { L: 0, dp: 0, n: 0 };
     c.L += r.L; c.dp += r.dpTotal; c.n++;

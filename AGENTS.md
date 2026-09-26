@@ -11,3 +11,4 @@
 
 - P&ID domain logic lives in src/lib/pid (catalog, fluids, hydraulics, bom, symbols, zustand store persisted to localStorage) — keeps calculations UI-independent and testable.
 - Editor route renders client-only after mount — the persisted store and SVG canvas depend on browser state.
+- Power totals (sensible/required/supplied) live in src/lib/pid/power.ts — one source for header, PDF and inspector.

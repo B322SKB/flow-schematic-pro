@@ -9,10 +9,10 @@ export interface PidNode {
   x: number;
   y: number;
   rotation: number;
-  dn?: number;
-  kOverride?: number;
-  dpFixed?: number; // kPa, equipment pressure drop
-  note?: string;
+  dn?: number | undefined;
+  kOverride?: number | undefined;
+  dpFixed?: number | undefined; // kPa, equipment pressure drop
+  note?: string | undefined;
 }
 
 export interface Pipe {

@@ -25,7 +25,7 @@ export function normalizePipe(p: Pipe, patch: Partial<Pipe>): Partial<Pipe> {
   if (next.dn < m.dnRange[0]) next.dn = m.dnRange[0];
   if (next.dn > m.dnRange[1]) next.dn = m.dnRange[1];
   if (!m.joints.includes(next.joint) || !jointAllowed(next.joint, next.dn)) {
-    next.joint = m.joints.find((j) => jointAllowed(j, next.dn)) ?? m.joints[0];
+    next.joint = m.joints.find((j) => jointAllowed(j, next.dn)) ?? m.joints[0]!;
   }
   return { ...patch, dn: next.dn, joint: next.joint };
 }
@@ -51,7 +51,7 @@ export function Inspector() {
         )}
 
         {node && (() => {
-          const s = SYMBOLS[node.type];
+          const s = SYMBOLS[node.type]!;
           return (
             <>
               <div className="flex items-center justify-between">

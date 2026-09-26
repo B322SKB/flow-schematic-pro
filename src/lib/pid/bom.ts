@@ -48,7 +48,7 @@ export function buildBom(scheme: Scheme): BomRow[] {
   }
 
   for (const n of scheme.nodes) {
-    const s = SYMBOLS[n.type];
+    const s = SYMBOLS[n.type]!;
     const pipe = scheme.pipes.find((p) => p.from.node === n.id || p.to.node === n.id);
     const dn = n.dn ?? pipe?.dn;
     const spec = s.bomGroup === "Echipamente" ? (n.note || "conform fișă tehnică") : dn ? `DN${dn}` : "—";

@@ -46,13 +46,13 @@ function pipeTag(p: Pick<Pipe, "circuit" | "dn">, existing: string[]) {
 function routeLen(pipe: Pipe, scheme: Scheme) {
   const pts = pipeRoute(pipe, scheme);
   let L = 0;
-  for (let i = 1; i < pts.length; i++) L += Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y);
+  for (let i = 1; i < pts.length; i++) L += Math.abs(pts[i]!.x - pts[i - 1]!.x) + Math.abs(pts[i]!.y - pts[i - 1]!.y);
   return Math.max(0.5, Math.round((L / PX_PER_M) * 10) / 10);
 }
 
 function demo(): Scheme {
   const n = (id: string, type: SymbolType, tag: string, x: number, y: number, extra: Partial<PidNode> = {}): PidNode => ({
-    id, type, tag, x, y, rotation: 0, dpFixed: SYMBOLS[type].dpDefault, ...extra,
+    id, type, tag, x, y, rotation: 0, dpFixed: SYMBOLS[type]!.dpDefault, ...extra,
   });
   const nodes: PidNode[] = [
     n("ch", "chiller", "CH-01", 180, 320),
@@ -99,7 +99,7 @@ export const usePid = create<State>()(
       setScheme: (p) => set((st) => ({ scheme: { ...st.scheme, ...p } })),
       addNode: (type, x, y) =>
         set((st) => {
-          const sym = SYMBOLS[type];
+          const sym = SYMBOLS[type]!;
           const node: PidNode = {
             id: uid(), type, x: Math.round(x / 10) * 10, y: Math.round(y / 10) * 10, rotation: 0,
             tag: nextTag(sym.prefix, st.scheme.nodes.map((n) => n.tag)), dpFixed: sym.dpDefault,
@@ -147,7 +147,7 @@ export const usePid = create<State>()(
           const tags: string[] = [];
           const pipes = st.scheme.pipes.map((p) => { const tag = pipeTag(p, tags); tags.push(tag); return { ...p, tag }; });
           const ntags: string[] = [];
-          const nodes = st.scheme.nodes.map((n) => { const tag = nextTag(SYMBOLS[n.type].prefix, ntags); ntags.push(tag); return { ...n, tag }; });
+          const nodes = st.scheme.nodes.map((n) => { const tag = nextTag(SYMBOLS[n.type]!.prefix, ntags); ntags.push(tag); return { ...n, tag }; });
           return { scheme: { ...st.scheme, pipes, nodes } };
         }),
       recalcLengths: () => set((st) => ({ scheme: { ...st.scheme, pipes: st.scheme.pipes.map((p) => ({ ...p, length: routeLen(p, st.scheme) })) } })),

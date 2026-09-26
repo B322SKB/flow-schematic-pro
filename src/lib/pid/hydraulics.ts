@@ -52,7 +52,7 @@ export function pipeRoute(pipe: Pipe, scheme: Scheme): { x: number; y: number }[
 export function portPos(scheme: Scheme, nodeId: string, portId: string) {
   const n = scheme.nodes.find((x) => x.id === nodeId);
   if (!n) return null;
-  const s = SYMBOLS[n.type];
+  const s = SYMBOLS[n.type]!;
   const p = s.ports.find((q) => q.id === portId);
   if (!p) return null;
   const rad = (n.rotation * Math.PI) / 180;
@@ -88,7 +88,7 @@ export function computePipe(pipe: Pipe, scheme: Scheme, fp: FluidProps): PipeRes
   let dpFixed = 0;
   const target = scheme.nodes.find((n) => n.id === pipe.to.node);
   if (target) {
-    const sym = SYMBOLS[target.type];
+    const sym = SYMBOLS[target.type]!;
     if (sym.K !== undefined) Kcomp += target.kOverride ?? sym.K;
     if (target.dpFixed) dpFixed += target.dpFixed * 1000;
   }

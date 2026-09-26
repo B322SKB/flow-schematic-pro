@@ -77,7 +77,7 @@ const rowArr = (r: BomRow) => [r.group, r.item, r.code, r.spec, r.qty, r.unit, r
 export async function exportXlsx(rows: BomRow[], name: string) {
   const XLSX = await import("xlsx");
   const ws = XLSX.utils.aoa_to_sheet([HEAD, ...rows.map(rowArr)]);
-  ws["!cols"] = [{ wch: 16 }, { wch: 32 }, { wch: 44 }, { wch: 10 }, { wch: 8 }, { wch: 40 }];
+  ws["!cols"] = [{ wch: 16 }, { wch: 32 }, { wch: 8 }, { wch: 44 }, { wch: 10 }, { wch: 8 }, { wch: 40 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "BOM-MTO");
   XLSX.writeFile(wb, `${slug(name)}-BOM.xlsx`);

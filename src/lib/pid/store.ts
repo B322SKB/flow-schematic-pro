@@ -49,7 +49,7 @@ interface State {
   addCustomSymbol: (c: Omit<CustomSymbol, "id">) => void;
   removeCustomSymbol: (id: string) => void;
   newProject: (name?: string, template?: "empty" | "demo" | "ring_dc") => void;
-  applyAutoFlows: () => { updated: number; ambiguous: number };
+  applyAutoFlows: () => { updated: number; ambiguous: number; unresolved: number; demand: number; notes: string[] };
   switchProject: (id: string) => void;
   duplicateProject: (id: string) => void;
   deleteProject: (id: string) => void;

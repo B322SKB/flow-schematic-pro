@@ -15,6 +15,9 @@ export interface SymbolDef {
   dpDefault?: number; // kPa
   riser?: "up" | "down"; // urcare / coborâre de conductă
   bomGroup: "Echipamente" | "Vane" | "Instrumente" | "Fitinguri";
+  terminal?: boolean; // echipament terminal de răcire (putere sensibilă / totală)
+  source?: boolean; // sursă (chiller)
+  hasVolume?: boolean; // are volum (litri)
   render: () => ReactNode;
 }
 
@@ -56,7 +59,7 @@ const defs = [
   { type: "pump_twin", name: "Pompă dublă", category: "Pompe", prefix: "P", code: "PD", w: 60, h: 40, bomGroup: "Echipamente", ports: inline2,
     render: () => (<g><line x1={0} y1={20} x2={6} y2={20} {...S} /><line x1={54} y1={20} x2={60} y2={20} {...S} /><circle cx={19} cy={20} r={13} {...S} fill="var(--canvas-bg)" /><circle cx={41} cy={20} r={13} {...S} fill="var(--canvas-bg)" /><path d="M14 13 L26 20 L14 27" {...S} /><path d="M36 13 L48 20 L36 27" {...S} /></g>) },
   // Equipment
-  { type: "chiller", name: "Chiller", category: "Echipamente", prefix: "CH", code: "CH", w: 120, h: 70, bomGroup: "Echipamente", dpDefault: 45,
+  { type: "chiller", source: true, name: "Chiller", category: "Echipamente", prefix: "CH", code: "CH", w: 120, h: 70, bomGroup: "Echipamente", dpDefault: 45,
     ports: [{ id: "a", x: 0, y: 20 }, { id: "b", x: 0, y: 50 }, { id: "c", x: 120, y: 20 }, { id: "d", x: 120, y: 50 }],
     render: () => (<g><rect x={4} y={4} width={112} height={62} rx={4} {...S} fill="var(--canvas-bg)" /><path d="M20 35 h80 M30 20 l10 15 -10 15 M90 20 l-10 15 10 15" {...S} strokeWidth={1.5} /><text x={60} y={62} textAnchor="middle" fontSize={9} fill="currentColor">CHILLER</text><line x1={0} y1={20} x2={4} y2={20} {...S} /><line x1={0} y1={50} x2={4} y2={50} {...S} /><line x1={116} y1={20} x2={120} y2={20} {...S} /><line x1={116} y1={50} x2={120} y2={50} {...S} /></g>) },
   { type: "boiler", name: "Cazan", category: "Echipamente", prefix: "B", code: "CZ", w: 70, h: 90, bomGroup: "Echipamente", dpDefault: 15,
@@ -68,23 +71,23 @@ const defs = [
   { type: "hex_shell", name: "Schimbător manta-tub", category: "Echipamente", prefix: "HE", code: "SMT", w: 100, h: 50, bomGroup: "Echipamente", dpDefault: 30,
     ports: [{ id: "a", x: 0, y: 25 }, { id: "b", x: 100, y: 25 }, { id: "c", x: 30, y: 0 }, { id: "d", x: 70, y: 50 }],
     render: () => (<g><rect x={8} y={8} width={84} height={34} rx={17} {...S} fill="var(--canvas-bg)" /><path d="M8 25 h14 l8 -10 l10 20 l10 -20 l10 20 l10 -20 l8 10 h14" {...S} strokeWidth={1.5} /><line x1={0} y1={25} x2={8} y2={25} {...S} /><line x1={92} y1={25} x2={100} y2={25} {...S} /><line x1={30} y1={0} x2={30} y2={8} {...S} /><line x1={70} y1={42} x2={70} y2={50} {...S} /></g>) },
-  { type: "buffer_tank", name: "Rezervor tampon", category: "Echipamente", prefix: "TK", code: "RT", w: 60, h: 110, bomGroup: "Echipamente", dpDefault: 2,
+  { type: "buffer_tank", hasVolume: true, name: "Rezervor tampon", category: "Echipamente", prefix: "TK", code: "RT", w: 60, h: 110, bomGroup: "Echipamente", dpDefault: 2,
     ports: [{ id: "a", x: 0, y: 25 }, { id: "b", x: 0, y: 85 }, { id: "c", x: 60, y: 25 }, { id: "d", x: 60, y: 85 }],
     render: () => (<g><rect x={6} y={5} width={48} height={100} rx={24} {...S} fill="var(--canvas-bg)" /><line x1={0} y1={25} x2={6} y2={25} {...S} /><line x1={0} y1={85} x2={6} y2={85} {...S} /><line x1={54} y1={25} x2={60} y2={25} {...S} /><line x1={54} y1={85} x2={60} y2={85} {...S} /></g>) },
-  { type: "expansion", name: "Vas de expansiune", category: "Echipamente", prefix: "EV", code: "VE", w: 50, h: 70, bomGroup: "Echipamente",
+  { type: "expansion", hasVolume: true, name: "Vas de expansiune", category: "Echipamente", prefix: "EV", code: "VE", w: 50, h: 70, bomGroup: "Echipamente",
     ports: [{ id: "a", x: 25, y: 70 }],
     render: () => (<g><rect x={5} y={5} width={40} height={55} rx={20} {...S} fill="var(--canvas-bg)" /><path d="M5 32 q10 -6 20 0 t20 0" {...S} strokeWidth={1.5} /><line x1={25} y1={60} x2={25} y2={70} {...S} /></g>) },
-  { type: "ahu_coil", name: "Baterie răcire/încălzire", category: "Echipamente", prefix: "CL", code: "BR", w: 60, h: 60, bomGroup: "Echipamente", dpDefault: 20,
+  { type: "ahu_coil", terminal: true, name: "Baterie răcire/încălzire", category: "Echipamente", prefix: "CL", code: "BR", w: 60, h: 60, bomGroup: "Echipamente", dpDefault: 20,
     ports: [{ id: "a", x: 0, y: 15 }, { id: "b", x: 0, y: 45 }],
     render: () => (<g><rect x={6} y={4} width={50} height={52} {...S} fill="var(--canvas-bg)" /><path d="M6 4 L56 56 M56 4 L6 56" {...S} strokeWidth={1} /><line x1={0} y1={15} x2={6} y2={15} {...S} /><line x1={0} y1={45} x2={6} y2={45} {...S} /></g>) },
   // Data-center cooling equipment
-  { type: "ccu", name: "Close Control Unit (CCU)", category: "Echipamente", prefix: "CCU", code: "CCU", w: 100, h: 70, bomGroup: "Echipamente", dpDefault: 35,
+  { type: "ccu", terminal: true, name: "Close Control Unit (CCU)", category: "Echipamente", prefix: "CCU", code: "CCU", w: 100, h: 70, bomGroup: "Echipamente", dpDefault: 35,
     ports: equipPorts4, render: () => boxEquip("CCU", "CLOSE CONTROL") },
-  { type: "inrow", name: "Unitate In-Row (IRU)", category: "Echipamente", prefix: "IRU", code: "IRU", w: 100, h: 70, bomGroup: "Echipamente", dpDefault: 30,
+  { type: "inrow", terminal: true, name: "Unitate In-Row (IRU)", category: "Echipamente", prefix: "IRU", code: "IRU", w: 100, h: 70, bomGroup: "Echipamente", dpDefault: 30,
     ports: equipPorts4, render: () => boxEquip("IRU", "IN-ROW") },
-  { type: "rdhx", name: "Rear Door Heat Exchanger", category: "Echipamente", prefix: "RDHX", code: "RDHX", w: 100, h: 70, bomGroup: "Echipamente", dpDefault: 25,
+  { type: "rdhx", terminal: true, name: "Rear Door Heat Exchanger", category: "Echipamente", prefix: "RDHX", code: "RDHX", w: 100, h: 70, bomGroup: "Echipamente", dpDefault: 25,
     ports: equipPorts4, render: () => boxEquip("RDHX", "REAR DOOR HX") },
-  { type: "cdu", name: "Cooling Distribution Unit", category: "Echipamente", prefix: "CDU", code: "CDU", w: 100, h: 70, bomGroup: "Echipamente", dpDefault: 60,
+  { type: "cdu", terminal: true, name: "Cooling Distribution Unit", category: "Echipamente", prefix: "CDU", code: "CDU", w: 100, h: 70, bomGroup: "Echipamente", dpDefault: 60,
     ports: equipPorts4, render: () => boxEquip("CDU", "LIQUID COOLING") },
   { type: "pressure_station", name: "Stație menținere presiune", category: "Echipamente", prefix: "SMP", code: "SMP", w: 60, h: 80, bomGroup: "Echipamente", dpDefault: 0,
     ports: [{ id: "a", x: 30, y: 80 }],
@@ -152,8 +155,25 @@ const defs = [
 ] satisfies SymbolDef[];
 
 export type SymbolType = string;
-export const SYMBOLS = Object.fromEntries(defs.map((d) => [d.type, d])) as Record<string, SymbolDef>;
-export const SYMBOL_LIST: SymbolDef[] = defs;
+/** Scară de desen pe categorie: echipamentele mai mari decât vanele/fitingurile. */
+const SCALE: Partial<Record<SymbolCategory, number>> = { Echipamente: 1.5, Vane: 0.75, Fitinguri: 0.75, "Instrumentație": 0.8, Traseu: 0.75 };
+
+/** Scalează simbolul păstrând porturile pe grila de 5 (relativ la centru) pentru trasee drepte. */
+function scaled(d: SymbolDef): SymbolDef {
+  const k = SCALE[d.category] ?? 1;
+  if (k === 1) return d;
+  const w = Math.max(20, Math.round((d.w * k) / 10) * 10);
+  const h = Math.max(20, Math.round((d.h * k) / 10) * 10);
+  const kx = w / d.w, ky = h / d.h;
+  const r5 = (v: number) => Math.round(v / 5) * 5;
+  const ports = d.ports.map((p) => ({ ...p, x: r5((p.x - d.w / 2) * kx) + w / 2, y: r5((p.y - d.h / 2) * ky) + h / 2 }));
+  const r = d.render;
+  return { ...d, w, h, ports, render: () => <g transform={`scale(${kx} ${ky})`}>{r()}</g> };
+}
+
+const scaledDefs: SymbolDef[] = (defs as SymbolDef[]).map(scaled);
+export const SYMBOLS = Object.fromEntries(scaledDefs.map((d) => [d.type, d])) as Record<string, SymbolDef>;
+export const SYMBOL_LIST: SymbolDef[] = scaledDefs;
 
 /** Simbol definit de utilizator, salvat în proiect. */
 export interface CustomSymbol {
@@ -166,6 +186,7 @@ export interface CustomSymbol {
   dpDefault?: number | undefined;
   kw?: number | undefined;
   K?: number | undefined;
+  image?: string | undefined; // desen propriu (data URL SVG/PNG/JPG)
 }
 
 const CUSTOM_PORTS: Record<number, { id: string; x: number; y: number }[]> = {
@@ -191,9 +212,18 @@ export function customSymbolDef(c: CustomSymbol): SymbolDef {
     ...(c.K !== undefined ? { K: c.K } : {}),
     render: () => (
       <g>
-        <rect x={4} y={4} width={92} height={52} rx={4} {...S} fill="var(--canvas-bg)" strokeDasharray="6 3" />
-        <text x={50} y={27} textAnchor="middle" fontSize={12} fontWeight={700} fill="currentColor">{c.code || c.prefix}</text>
-        <text x={50} y={43} textAnchor="middle" fontSize={7} fill="currentColor">{c.name.slice(0, 22).toUpperCase()}</text>
+        {c.image ? (
+          <>
+            <rect x={4} y={4} width={92} height={52} rx={4} fill="var(--canvas-bg)" />
+            <image href={c.image} x={6} y={6} width={88} height={48} preserveAspectRatio="xMidYMid meet" />
+          </>
+        ) : (
+          <>
+            <rect x={4} y={4} width={92} height={52} rx={4} {...S} fill="var(--canvas-bg)" strokeDasharray="6 3" />
+            <text x={50} y={27} textAnchor="middle" fontSize={12} fontWeight={700} fill="currentColor">{c.code || c.prefix}</text>
+            <text x={50} y={43} textAnchor="middle" fontSize={7} fill="currentColor">{c.name.slice(0, 22).toUpperCase()}</text>
+          </>
+        )}
         {ports.map((p) => (
           <line key={p.id} x1={p.x < 50 ? 0 : 96} y1={p.y} x2={p.x < 50 ? 4 : 100} y2={p.y} {...S} />
         ))}

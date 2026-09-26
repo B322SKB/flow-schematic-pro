@@ -11,8 +11,10 @@ export interface FluidProps {
   rho: number; // kg/m3
   mu: number; // Pa·s
   nu: number; // m2/s
+  cp: number; // J/(kg·K)
   freeze: number; // °C
 }
+
 
 function waterRho(T: number) {
   return 1000 * (1 - ((T + 288.9414) / (508929.2 * (T + 68.12963))) * (T - 3.9863) ** 2);
@@ -33,12 +35,22 @@ export function fluidProps(fluid: FluidId, concentration: number, T: number): Fl
   const mw = waterMu(T);
   let rho = rw;
   let mu = mw;
+  let cp = 4180 + 0.0007 * (T - 20) ** 2 * 10;
   if (fluid === "eg") {
     rho = rw * (1 + 0.0014 * c - 0.0000045 * c * T);
     mu = mw * Math.exp(c * (0.0267 + 0.0002 * (20 - T)));
+    cp = cp * (1 - 0.0045 * c);
   } else if (fluid === "pg") {
-    rho = rw * (1 + 0.0009 * c - 0.0000040 * c * T);
+    rho = rw * (1 + 0.0009 * c - 0.000004 * c * T);
     mu = mw * Math.exp(c * (0.0358 + 0.00034 * (20 - T)));
+    cp = cp * (1 - 0.004 * c);
   }
-  return { rho, mu, nu: mu / rho, freeze: freezePoint(fluid, c) };
+  return { rho, mu, nu: mu / rho, cp, freeze: freezePoint(fluid, c) };
 }
+
+/** Debit volumic [m³/h] dintr-o putere termică [kW] și un ΔT [K]. */
+export function flowFromKw(kw: number, dT: number, fp: FluidProps) {
+  if (!kw || !dT) return 0;
+  return Math.round(((kw * 1000) / (fp.rho * fp.cp * dT)) * 3600 * 100) / 100;
+}
+

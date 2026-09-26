@@ -290,7 +290,7 @@ export const usePid = create<State>()(
         flipPipe: (id) =>
           patchScheme((s) => ({
             ...s,
-            pipes: s.pipes.map((p) => (p.id === id ? { ...p, from: p.to, to: p.from } : p)),
+            pipes: s.pipes.map((p) => (p.id === id ? { ...p, from: p.to, to: p.from, points: p.points ? [...p.points].reverse() : undefined } : p)),
           })),
 
         select: (s) => set((st) => ({ selected: s, multi: s?.kind === "node" && st.multi.includes(s.id) ? st.multi : [] })),

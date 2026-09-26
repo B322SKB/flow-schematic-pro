@@ -220,8 +220,12 @@ export function Inspector() {
                 )}
               </Field>
               <Field label="Traseu pe desen">
-                <Sel value={pipe.routing} onChange={(v) => updatePipe(pipe.id, { routing: v })}
+                <Sel value={pipe.routing} onChange={(v) => updatePipe(pipe.id, { routing: v, points: undefined })}
                   options={[{ value: "auto", label: "Automat (Z)" }, { value: "hv", label: "Orizontal → vertical" }, { value: "vh", label: "Vertical → orizontal" }]} />
+                <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                  <span>{pipe.points?.length ? "Traseu modificat manual" : "Trage de pătratele de pe conductă pentru a o rearanja"}</span>
+                  {!!pipe.points?.length && <Button size="sm" variant="outline" className="h-6 px-2 text-[11px]" onClick={() => updatePipe(pipe.id, { points: undefined })}>Resetează</Button>}
+                </div>
               </Field>
               <div>
                 <div className="mb-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">Fitinguri suplimentare</div>

@@ -152,6 +152,30 @@ export function Inspector() {
                       Debit calculat din {node.kw} kW și ΔT {node.deltaT ?? scheme.deltaT} K: {flowFromKw(node.kw, node.deltaT ?? scheme.deltaT, fp).toFixed(2)} m³/h
                     </p>
                   )}
+                  {s.source && (
+                    <div className="space-y-2 rounded-md border bg-card p-3">
+                      <Field label="Modul hidraulic integrat">
+                        <Sel value={node.intPump ?? "none"}
+                          onChange={(v) => updateNode(node.id, { intPump: v === "none" ? undefined : (v as "single" | "twin") })}
+                          options={[
+                            { value: "none", label: "Fără pompă integrată" },
+                            { value: "single", label: "Pompă simplă integrată" },
+                            { value: "twin", label: "Pompă dublă integrată (1A+1R)" },
+                          ]} />
+                      </Field>
+                      {node.intPump && (
+                        <>
+                          <Field label="Presiune utilă la flanșe (kPa)">
+                            <Input type="number" step="5" min={0} className="h-8" value={node.pumpHead ?? 0}
+                              onChange={(e) => updateNode(node.id, { pumpHead: +e.target.value })} />
+                          </Field>
+                          <p className="text-[11px] text-muted-foreground">
+                            Presiunea utilă se scade din sarcina cerută pompelor exterioare, pe traseul critic.
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  )}
                   <Field label="Specificație suplimentară (BOM)">
                     <Input className="h-8" value={node.note ?? ""} placeholder="ex. R513A, 2 circuite, 400V"
                       onChange={(e) => updateNode(node.id, { note: e.target.value })} />

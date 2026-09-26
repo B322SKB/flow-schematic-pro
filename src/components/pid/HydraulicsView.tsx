@@ -10,6 +10,8 @@ import { CIRCUITS, circuitColor, getMaterial, sizeLabel, type CircuitId } from "
 import { FLUID_LABEL, fluidProps, type FluidId } from "@/lib/pid/fluids";
 import { computePipe, fmtP, type PUnit } from "@/lib/pid/hydraulics";
 import { usePid } from "@/lib/pid/store";
+import { PidCanvas } from "./Canvas";
+import { Switch } from "@/components/ui/switch";
 import { Field, Sel } from "./fields";
 
 export function FluidCard() {
@@ -59,7 +61,8 @@ export function HydraulicsView() {
   const [pu, setPu] = useState<PUnit>("kPa");
   const [qu, setQu] = useState<"m3h" | "ls">("m3h");
   const fp = fluidProps(scheme.fluid, scheme.concentration, scheme.temperature);
-  const results = scheme.pipes.map((p) => ({ p, r: computePipe(p, scheme, fp) }));
+  const results = scheme.pipes.filter((p) => !p.disabled).map((p) => ({ p, r: computePipe(p, scheme, fp) }));
+  const disabled = scheme.pipes.filter((p) => p.disabled);
   const byCircuit = new Map<CircuitId, { L: number; dp: number; n: number }>();
   for (const { p, r } of results) {
     const c = byCircuit.get(p.circuit) ?? { L: 0, dp: 0, n: 0 };
@@ -70,7 +73,8 @@ export function HydraulicsView() {
   const warns = results.filter((x) => x.r.velWarn).length;
 
   return (
-    <div className="grid h-full grid-cols-[320px_1fr] gap-4 overflow-auto p-4">
+    <div className="h-full overflow-auto p-4">
+    <div className="grid grid-cols-[320px_1fr] gap-4">
       <div className="space-y-4">
         <FluidCard />
         <Card>
@@ -97,6 +101,21 @@ export function HydraulicsView() {
             <p className="font-sans text-[11px] text-muted-foreground">Include pierderile liniare, fitingurile, vanele și căderile de presiune ale echipamentelor.</p>
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-sm">Scenariu rețea inel</CardTitle></CardHeader>
+          <CardContent className="space-y-2 text-xs">
+            <p className="text-muted-foreground">Scoate din funcțiune tronsonul care creează situația cea mai dezavantajată. Tronsoanele scoase sunt excluse din calcul și apar punctat pe desen. Ajustează debitele pe tronsoanele rămase în funcțiune.</p>
+            <div className="max-h-48 space-y-1 overflow-auto">
+              {scheme.pipes.filter((p) => !p.direct).map((p) => (
+                <label key={p.id} className="flex items-center justify-between rounded border px-2 py-1 font-mono">
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: circuitColor(scheme, p.circuit) }} />{p.tag}</span>
+                  <Switch checked={!!p.disabled} onCheckedChange={(v) => updatePipe(p.id, { disabled: v })} />
+                </label>
+              ))}
+            </div>
+            {disabled.length > 0 && <Badge variant="destructive">{disabled.length} tronson(e) scoase: {disabled.map((p) => p.tag).join(", ")}</Badge>}
+          </CardContent>
+        </Card>
       </div>
       <Card className="min-w-0">
         <CardHeader className="flex-row items-center justify-between pb-3">
@@ -113,7 +132,7 @@ export function HydraulicsView() {
             <TableBody>
               {results.map(({ p, r }) => (
                 <TableRow key={p.id} className="cursor-pointer" onClick={() => select({ kind: "pipe", id: p.id })}>
-                  <TableCell className="whitespace-nowrap"><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: circuitColor(scheme, p.circuit) }} />{p.tag}</TableCell>
+                  <TableCell className="whitespace-nowrap"><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: circuitColor(scheme, p.circuit) }} />{p.tag}{p.direct && <span className="ml-1 text-muted-foreground">(direct)</span>}</TableCell>
                   <TableCell className="whitespace-nowrap font-sans">{getMaterial(p.material).short} {sizeLabel(p.material, p.dn)}</TableCell>
                   <TableCell>{r.L.toFixed(1)}</TableCell>
                   <TableCell>
@@ -137,6 +156,15 @@ export function HydraulicsView() {
             </TableBody>
           </Table>
           <p className="mt-3 text-[11px] text-muted-foreground">Limite viteză recomandate: ≤DN25 0,3–1,0 m/s · ≤DN50 0,4–1,5 · ≤DN100 0,5–2,0 · &gt;DN100 0,6–2,8 m/s. L = laminar (Re&lt;2300), T = turbulent.</p>
+        </CardContent>
+      </Card>
+    </div>
+      <Card className="mt-4">
+        <CardHeader className="pb-3"><CardTitle className="text-sm">Schemă cu coduri pentru trasabilitatea calculului</CardTitle></CardHeader>
+        <CardContent>
+          <div className="h-[560px] overflow-hidden rounded-md border">
+            <PidCanvas readOnly showTags />
+          </div>
         </CardContent>
       </Card>
     </div>

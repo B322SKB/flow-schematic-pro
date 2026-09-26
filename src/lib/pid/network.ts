@@ -95,7 +95,7 @@ export function propagateFlows(scheme: Scheme, fp: FluidProps): Map<string, Flow
 
   for (const p of pipes) {
     const a = reach(p.from.node, p.id);
-    if (a.has(p.to.node)) {
+    if (!blocked.has(p.to.node) && a.has(p.to.node)) {
       out.set(p.id, { flow: 0, ambiguous: true, reason: "tronson de inel (cale paralelă)" });
       continue;
     }

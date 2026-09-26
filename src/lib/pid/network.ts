@@ -64,6 +64,7 @@ export function propagateFlows(scheme: Scheme, fp: FluidProps): Map<string, Flow
     return f;
   };
 
+  const sourceIds = new Set(scheme.nodes.filter((n) => getSymbol(n.type).source).map((n) => n.id));
   for (const p of pipes) {
     const down = reach(p.to.node, p.id, true);
     // cale paralelă între aceleași noduri => tronson de inel
@@ -71,8 +72,11 @@ export function propagateFlows(scheme: Scheme, fp: FluidProps): Map<string, Flow
       out.set(p.id, { flow: 0, ambiguous: true });
       continue;
     }
-    const up = reach(p.from.node, p.id, false);
-    const f = Math.max(sum(down), sum(up));
+    const dSum = sum(down);
+    // tur: consumatori în aval; retur: consumatori în amonte; ramificație fără consum: 0
+    let f = 0;
+    if (dSum > 0) f = dSum;
+    else if ([...down].some((id) => sourceIds.has(id))) f = sum(reach(p.from.node, p.id, false));
     out.set(p.id, { flow: Math.round(f * 100) / 100, ambiguous: false });
   }
   return out;

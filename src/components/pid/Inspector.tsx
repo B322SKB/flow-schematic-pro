@@ -1,4 +1,6 @@
-import { Trash2, RotateCw, ArrowLeftRight, Zap } from "lucide-react";
+import { Trash2, RotateCw, ArrowLeftRight, Zap, Copy, Move, Lightbulb } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { pipePower } from "@/lib/pid/power";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +11,7 @@ import {
   innerDiameterMm, jointAllowed, sizeLabel,
   type CircuitId, type FittingId, type JointType, type MaterialId,
 } from "@/lib/pid/catalog";
-import { autoBends, computePipe, fmtP } from "@/lib/pid/hydraulics";
+import { autoBends, colebrook, computePipe, fmtP, velocityLimits } from "@/lib/pid/hydraulics";
 import { flowFromKw, fluidProps } from "@/lib/pid/fluids";
 import { usePid } from "@/lib/pid/store";
 import { getSymbol } from "@/lib/pid/symbols";
@@ -33,7 +35,7 @@ export function normalizePipe(p: Pipe, patch: Partial<Pipe>): Partial<Pipe> {
 }
 
 export function Inspector() {
-  const { scheme, selected, updateNode, updatePipe, removeSelected, flipPipe, pipeDefaults, setPipeDefaults } = usePid();
+  const { scheme, selected, multi, grid, setGrid, updateNode, updatePipe, removeSelected, flipPipe, pipeDefaults, setPipeDefaults, duplicateNodes } = usePid();
   const node = selected?.kind === "node" ? scheme.nodes.find((n) => n.id === selected.id) : undefined;
   const pipe = selected?.kind === "pipe" ? scheme.pipes.find((p) => p.id === selected.id) : undefined;
   const fp = fluidProps(scheme.fluid, scheme.concentration, scheme.temperature);
@@ -41,8 +43,21 @@ export function Inspector() {
   return (
     <ScrollArea className="h-full border-l bg-sidebar">
       <div className="space-y-4 p-4">
+        {multi.length > 1 && (
+          <div className="space-y-2 rounded-md border border-primary/50 bg-primary/5 p-3">
+            <div className="text-sm font-semibold">{multi.length} elemente selectate</div>
+            <p className="text-xs text-muted-foreground">Trage oricare element pentru a muta grupul; săgețile mută fin (Shift = 10 px).</p>
+            <div className="flex gap-2">
+              <Button size="sm" className="flex-1 gap-1.5" onClick={() => duplicateNodes(multi)}><Copy className="h-4 w-4" />Duplică grupul</Button>
+              <Button size="sm" variant="destructive" onClick={removeSelected}><Trash2 className="h-4 w-4" /></Button>
+            </div>
+          </div>
+        )}
         {!node && !pipe && (
           <>
+            <Field label="Pas grilă desen">
+              <Sel<number> value={grid} onChange={setGrid} options={[1, 5, 10, 20].map((g) => ({ value: g, label: `${g} px` }))} />
+            </Field>
             <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Setări conductă nouă</div>
             <p className="text-xs text-muted-foreground">Aceste valori se aplică următoarelor conducte trasate.</p>
             <PipeFields value={pipeDefaults as Pipe} onChange={(p) => setPipeDefaults(normalizePipe(pipeDefaults as Pipe, p) as never)} />
@@ -54,10 +69,11 @@ export function Inspector() {
                 <Input type="number" className="h-8" value={pipeDefaults.flow} onChange={(e) => setPipeDefaults({ flow: +e.target.value })} />
               </Field>
             </div>
+            <DnAdvisor flow={pipeDefaults.flow} material={pipeDefaults.material} dn={pipeDefaults.dn} onPick={(dn) => setPipeDefaults({ dn })} />
           </>
         )}
 
-        {node && (() => {
+        {node && multi.length <= 1 && (() => {
           const s = getSymbol(node.type);
           return (
             <>
@@ -67,11 +83,30 @@ export function Inspector() {
                   <div className="font-semibold">{s.name}</div>
                 </div>
                 <div className="flex gap-1">
+                  <Button size="icon" variant="secondary" title="Duplică (Ctrl+D)" onClick={() => duplicateNodes([node.id])}><Copy className="h-4 w-4" /></Button>
                   <Button size="icon" variant="secondary" onClick={() => updateNode(node.id, { rotation: (node.rotation + 90) % 360 })}><RotateCw className="h-4 w-4" /></Button>
                   <Button size="icon" variant="destructive" onClick={removeSelected}><Trash2 className="h-4 w-4" /></Button>
                 </div>
               </div>
               <Field label="Tag"><Input className="h-8 font-mono" value={node.tag} onChange={(e) => updateNode(node.id, { tag: e.target.value })} /></Field>
+              {(node.codeDx || node.codeDy) ? (
+                <Button size="sm" variant="ghost" className="h-7 gap-1.5 px-2 text-xs" onClick={() => updateNode(node.id, { codeDx: 0, codeDy: 0 })}>
+                  <Move className="h-3.5 w-3.5" />Readu eticheta de cod la poziția inițială
+                </Button>
+              ) : s.code ? <p className="text-[11px] text-muted-foreground">Eticheta „{s.code}” poate fi trasă pe desen dacă se suprapune.</p> : null}
+              {(s.terminal || s.source) && (
+                <div className="flex items-center justify-between rounded-md border bg-card px-3 py-2">
+                  <span className="text-sm">{node.redundant ? "Redundant" : "Activ"}</span>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    Activ <Switch checked={!!node.redundant} onCheckedChange={(v) => updateNode(node.id, { redundant: v })} /> Redundant
+                  </div>
+                </div>
+              )}
+              {s.hasVolume && (
+                <Field label="Volum (litri)">
+                  <Input type="number" min={0} className="h-8" value={node.volume ?? 0} onChange={(e) => updateNode(node.id, { volume: +e.target.value })} />
+                </Field>
+              )}
               {s.riser && (
                 <Field label={`Cotă ${s.riser === "up" ? "urcare (+)" : "coborâre (−)"} — m`}>
                   <Input type="number" step="0.1" min={0} className="h-8" value={node.z ?? 0} onChange={(e) => updateNode(node.id, { z: Math.abs(+e.target.value) })} />
@@ -94,8 +129,13 @@ export function Inspector() {
                   <Field label="Cădere presiune echipament (kPa)">
                     <Input type="number" className="h-8" value={node.dpFixed ?? 0} onChange={(e) => updateNode(node.id, { dpFixed: +e.target.value })} />
                   </Field>
+                  {s.terminal && (
+                    <Field label="Putere sensibilă (kW)">
+                      <Input type="number" className="h-8" value={node.kwSens ?? 0} onChange={(e) => updateNode(node.id, { kwSens: +e.target.value })} />
+                    </Field>
+                  )}
                   <div className="grid grid-cols-2 gap-2">
-                    <Field label="Putere (kW)">
+                    <Field label={s.terminal ? "Putere totală (kW)" : "Putere (kW)"}>
                       <Input type="number" className="h-8" value={node.kw ?? 0} onChange={(e) => updateNode(node.id, { kw: +e.target.value })} />
                     </Field>
                     <Field label="ΔT (K)">
@@ -142,10 +182,25 @@ export function Inspector() {
                   <Button size="icon" variant="destructive" onClick={removeSelected}><Trash2 className="h-4 w-4" /></Button>
                 </div>
               </div>
+              <div className="flex items-center justify-between rounded-md border bg-card px-3 py-2 text-sm">
+                <span className="flex items-center gap-1.5"><Zap className="h-3.5 w-3.5 text-primary" />Putere transportată</span>
+                <span className="font-mono font-semibold text-primary">{pipePower(pipe, scheme, fp).toFixed(1)} kW</span>
+              </div>
+              <div className="space-y-2 rounded-md border bg-card px-3 py-2 text-sm">
+                <label className="flex items-center justify-between gap-2">
+                  <span>Legătură directă (fără țeavă)</span>
+                  <Switch checked={!!pipe.direct} onCheckedChange={(v) => updatePipe(pipe.id, { direct: v, ...(v ? { length: 0 } : {}) })} />
+                </label>
+                <label className="flex items-center justify-between gap-2">
+                  <span>Tronson scos din funcțiune <span className="block text-[11px] text-muted-foreground">scenariu inel / redundanță</span></span>
+                  <Switch checked={!!pipe.disabled} onCheckedChange={(v) => updatePipe(pipe.id, { disabled: v })} />
+                </label>
+              </div>
               <PipeFields value={pipe} onChange={upd} />
-              <Field label="Lungime reală (m) — introdusă manual">
+              <DnAdvisor flow={pipe.flow} material={pipe.material} dn={pipe.dn} onPick={(dn) => upd({ dn })} />
+              {!pipe.direct && <Field label="Lungime reală (m) — introdusă manual">
                 <Input type="number" step="0.1" min={0} className="h-8" value={pipe.length} onChange={(e) => updatePipe(pipe.id, { length: +e.target.value })} />
-              </Field>
+              </Field>}
               <Field label="Debit">
                 <ToggleGroup type="single" variant="outline" size="sm" className="mb-2" value={pipe.flowMode}
                   onValueChange={(v) => v && updatePipe(pipe.id, { flowMode: v as Pipe["flowMode"] })}>
@@ -231,5 +286,42 @@ function PipeFields({ value, onChange }: { value: Pipe; onChange: (p: Partial<Pi
         </Field>
       </div>
     </>
+  );
+}
+
+
+/** Fereastră de asistență: secțiunea recomandată pentru debitul dat. */
+function DnAdvisor({ flow, material, dn, onPick }: { flow: number; material: MaterialId; dn: number; onPick: (dn: number) => void }) {
+  const scheme = usePid((s) => s.scheme);
+  const fp = fluidProps(scheme.fluid, scheme.concentration, scheme.temperature);
+  const m = getMaterial(material);
+  if (!flow || flow <= 0) return null;
+  const rows = dnOptions(material).map(({ value: d, label }) => {
+    const di = innerDiameterMm(material, d) / 1000;
+    const v = flow / 3600 / ((Math.PI * di * di) / 4);
+    const Re = (v * di) / fp.nu;
+    const f = colebrook(Re, m.roughness / 1000 / di);
+    const R = (f / di) * (fp.rho * v * v) / 2;
+    const [lo, hi] = velocityLimits(d);
+    return { d, label, v, R, ok: v >= lo && v <= hi && R <= 300 };
+  });
+  const rec = rows.find((r) => r.ok) ?? rows.find((r) => r.R <= 300);
+  const show = rows.filter((r) => r.v <= 4 && r.v >= 0.15);
+  return (
+    <div className="rounded-md border bg-card p-3">
+      <div className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
+        <Lightbulb className="h-3.5 w-3.5 text-primary" />Secțiune recomandată · {flow.toFixed(1)} m³/h
+      </div>
+      <div className="space-y-0.5 font-mono text-[11px]">
+        <div className="grid grid-cols-[1fr_52px_60px] px-1.5 text-muted-foreground"><span>DN</span><span className="text-right">v m/s</span><span className="text-right">R Pa/m</span></div>
+        {show.map((r) => (
+          <button key={r.d} onClick={() => onPick(r.d)}
+            className={`grid w-full grid-cols-[1fr_52px_60px] rounded px-1.5 py-0.5 text-left hover:bg-muted ${r.d === rec?.d ? "bg-primary/15 text-primary" : ""} ${r.d === dn ? "ring-1 ring-primary" : ""} ${!r.ok ? "opacity-60" : ""}`}>
+            <span>DN{r.d}{r.d === rec?.d ? " ★" : ""}</span><span className="text-right">{r.v.toFixed(2)}</span><span className="text-right">{r.R.toFixed(0)}</span>
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-[10px] text-muted-foreground">★ = cel mai mic DN cu viteză în limite și R ≤ 300 Pa/m. Click pentru a aplica.</p>
+    </div>
   );
 }

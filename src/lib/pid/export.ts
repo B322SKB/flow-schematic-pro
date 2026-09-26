@@ -108,9 +108,9 @@ export interface SchemeStats {
 }
 
 /** PDF A3 landscape cu desenul, legenda de culori/simboluri și cartușul tehnic. */
-export async function exportSchemePdf(svg: SVGSVGElement, scheme: Scheme, stats: SchemeStats) {
-  const out = schemeSvgString(svg);
-  if (!out) return;
+export type SvgOut = NonNullable<ReturnType<typeof schemeSvgString>>;
+
+export async function exportSchemePdf(out: SvgOut, coded: SvgOut, scheme: Scheme, stats: SchemeStats) {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a3" });
   const W = 420, H = 297, M = 8;
@@ -241,9 +241,136 @@ export async function exportSchemePdf(svg: SVGSVGElement, scheme: Scheme, stats:
     tableWidth: 160,
   });
 
+  // ultima pagină: desenul cu codurile și tag-urile elementelor
+  doc.addPage("a3", "landscape");
+  doc.setTextColor(20);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text(ascii(`${scheme.name} - schema cu coduri si tag-uri`), M + 4, M + 9);
+  const png2 = await rasterize(coded.markup, coded.width, coded.height, 2.5, coded.bg);
+  const cw2 = W - 2 * M - 8, ch2 = H - 2 * M - 18;
+  const k2 = Math.min(cw2 / coded.width, ch2 / coded.height);
+  const w2 = coded.width * k2, h2 = coded.height * k2;
+  doc.addImage(png2, "PNG", M + 4 + (cw2 - w2) / 2, M + 13 + (ch2 - h2) / 2, w2, h2);
+  doc.setDrawColor(40);
+  doc.setLineWidth(0.6);
+  doc.rect(M, M, W - 2 * M, H - 2 * M);
+
   doc.save(`${slug(scheme.name)}-schema.pdf`);
 }
 
 export function exportProjectFile(scheme: Scheme) {
   download(new Blob([JSON.stringify(scheme, null, 2)], { type: "application/json" }), `${slug(scheme.name)}.pid.json`);
+}
+
+/* ---------- DXF (AutoCAD R12, ASCII) ---------- */
+const ACI: [number, number, number, number][] = [
+  [1, 255, 0, 0], [2, 255, 255, 0], [3, 0, 255, 0], [4, 0, 255, 255], [5, 0, 0, 255], [6, 255, 0, 255], [7, 255, 255, 255],
+  [8, 128, 128, 128], [9, 192, 192, 192], [30, 255, 127, 0], [40, 255, 191, 0], [140, 0, 127, 255], [150, 0, 63, 255], [210, 255, 0, 191],
+];
+function aci(color: string | null) {
+  if (!color) return 7;
+  const cv = document.createElement("canvas").getContext("2d")!;
+  cv.fillStyle = color;
+  const hex = cv.fillStyle as string;
+  if (!hex.startsWith("#")) return 7;
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  let best = 7, bd = Infinity;
+  for (const [i, R, G, B] of ACI) { const d = (R - r) ** 2 + (G - g) ** 2 + (B - b) ** 2; if (d < bd) { bd = d; best = i; } }
+  return best;
+}
+
+/** Export DXF din desenul afișat: geometria simbolurilor, conductele și textele. 1 unitate = 1 px (40 px = 1 m). */
+export function exportSchemeDxf(svg: SVGSVGElement, name: string) {
+  const content = svg.querySelector<SVGGElement>("#pid-content");
+  if (!content) return;
+  const base = content.getCTM()!.inverse();
+  const out: string[] = [];
+  const e = (...kv: (string | number)[]) => { for (let i = 0; i < kv.length; i += 2) out.push(String(kv[i]), typeof kv[i + 1] === "number" ? (kv[i + 1] as number).toFixed(3).replace(/\.?0+$/, "") || "0" : String(kv[i + 1])); };
+  const cs = getComputedStyle(document.documentElement);
+  const resolve = (v: string | null) => {
+    if (!v) return null;
+    const m = v.match(/var\((--[a-z0-9-]+)\)/i);
+    if (m) return cs.getPropertyValue(m[1]!).trim();
+    if (v === "currentColor") return cs.getPropertyValue("--canvas-ink").trim();
+    return v;
+  };
+  const visible = (el: Element, attr: "stroke" | "fill") => {
+    const v = el.getAttribute(attr) ?? getComputedStyle(el)[attr];
+    return v && v !== "none" && v !== "transparent" ? resolve(v) : null;
+  };
+  const layerOf = (el: Element) => (el.closest("[data-layer]")?.getAttribute("data-layer") ?? "PID").replace(/[^A-Za-z0-9_-]/g, "_");
+  const poly = (pts: DOMPoint[], closed: boolean, color: number, layer: string) => {
+    if (pts.length < 2) return;
+    e(0, "POLYLINE", 8, layer, 62, color, 66, 1, 70, closed ? 1 : 0);
+    for (const p of pts) e(0, "VERTEX", 8, layer, 10, p.x, 20, -p.y, 30, 0);
+    e(0, "SEQEND", 8, layer);
+  };
+  content.querySelectorAll<SVGGraphicsElement>("path,line,rect,circle,ellipse,polyline,polygon,text").forEach((el) => {
+    if (el.closest("title")) return;
+    const ctm = el.getCTM();
+    if (!ctm) return;
+    const m = base.multiply(ctm);
+    const tp = (x: number, y: number) => new DOMPoint(x, y).matrixTransform(m);
+    const layer = layerOf(el);
+    if (el.tagName === "text") {
+      const t = el.textContent?.trim();
+      if (!t) return;
+      const fs = parseFloat(el.getAttribute("font-size") ?? "10");
+      const bb = (el as SVGTextElement).getBBox();
+      const p = tp(bb.x, bb.y + bb.height * 0.8);
+      e(0, "TEXT", 8, layer, 62, aci(visible(el, "fill")), 10, p.x, 20, -p.y, 30, 0, 40, fs * 0.75, 1, ascii(t));
+      return;
+    }
+    const color = visible(el, "stroke") ?? visible(el, "fill");
+    if (!color) return;
+    const c = aci(color);
+    if (el.tagName === "circle") {
+      const cx = +el.getAttribute("cx")!, cy = +el.getAttribute("cy")!, r = +el.getAttribute("r")!;
+      const p = tp(cx, cy);
+      e(0, "CIRCLE", 8, layer, 62, c, 10, p.x, 20, -p.y, 30, 0, 40, r * Math.hypot(m.a, m.b));
+      return;
+    }
+    if (el.tagName === "line") {
+      const a = tp(+el.getAttribute("x1")!, +el.getAttribute("y1")!), b = tp(+el.getAttribute("x2")!, +el.getAttribute("y2")!);
+      e(0, "LINE", 8, layer, 62, c, 10, a.x, 20, -a.y, 30, 0, 11, b.x, 21, -b.y, 31, 0);
+      return;
+    }
+    if (el.tagName === "rect") {
+      const x = +(el.getAttribute("x") ?? 0), y = +(el.getAttribute("y") ?? 0), w = +el.getAttribute("width")!, h = +el.getAttribute("height")!;
+      if (!w || !h) return;
+      poly([tp(x, y), tp(x + w, y), tp(x + w, y + h), tp(x, y + h)], true, c, layer);
+      return;
+    }
+    // path / ellipse / polyline / polygon → eșantionare pe lungime
+    const g = el as SVGGeometryElement;
+    const L = g.getTotalLength?.() ?? 0;
+    if (!L) return;
+    const d = el.getAttribute("d") ?? "";
+    const curved = /[AaCcQqSsTt]/.test(d) || el.tagName === "ellipse";
+    const pts: DOMPoint[] = [];
+    if (!curved && el.tagName === "path") {
+      const nums = d.match(/[MLHVZmlhvz]|-?\d*\.?\d+(?:e-?\d+)?/g) ?? [];
+      let cmd = "M", cx = 0, cy = 0, i = 0, sx = 0, sy = 0;
+      const flush = () => { if (pts.length > 1) poly(pts.splice(0), false, c, layer); else pts.splice(0); };
+      while (i < nums.length) {
+        const tk = nums[i]!;
+        if (/[A-Za-z]/.test(tk)) { cmd = tk; i++; if (cmd === "Z" || cmd === "z") { pts.push(tp(sx, sy)); flush(); } continue; }
+        const rel = cmd === cmd.toLowerCase();
+        const C = cmd.toUpperCase();
+        if (C === "H") { cx = +tk + (rel ? cx : 0); i++; }
+        else if (C === "V") { cy = +tk + (rel ? cy : 0); i++; }
+        else { cx = +tk + (rel ? cx : 0); cy = +nums[i + 1]! + (rel ? cy : 0); i += 2; }
+        if (C === "M") { flush(); sx = cx; sy = cy; cmd = rel ? "l" : "L"; }
+        pts.push(tp(cx, cy));
+      }
+      flush();
+      return;
+    }
+    const n = Math.min(200, Math.max(8, Math.ceil(L / 3)));
+    for (let k = 0; k <= n; k++) { const p = g.getPointAtLength((L * k) / n); pts.push(tp(p.x, p.y)); }
+    poly(pts, false, c, layer);
+  });
+  const dxf = ["0", "SECTION", "2", "HEADER", "9", "$ACADVER", "1", "AC1009", "0", "ENDSEC", "0", "SECTION", "2", "ENTITIES", ...out, "0", "ENDSEC", "0", "EOF"].join("\r\n");
+  download(new Blob([dxf], { type: "application/dxf" }), `${slug(name)}-schema.dxf`);
 }

@@ -17,7 +17,7 @@ import { CIRCUITS, CIRCUIT_IDS, circuitColor } from "@/lib/pid/catalog";
 import { fluidProps } from "@/lib/pid/fluids";
 import { computePipe } from "@/lib/pid/hydraulics";
 import { powerTotals } from "@/lib/pid/power";
-import { exportSchemePdf, exportSchemePng, exportSchemeSvg } from "@/lib/pid/export";
+import { exportSchemeDxf, exportSchemePdf, exportSchemePng, exportSchemeSvg, schemeSvgString } from "@/lib/pid/export";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -52,12 +52,22 @@ function App() {
     lengthTotal: results.reduce((s, r) => s + r.L, 0),
   };
   const pw = powerTotals(scheme);
-  const [exporting, setExporting] = useState(false);
-  const run = async (fn: () => unknown, label: string) => {
-    setExporting(true);
-    await new Promise((r) => setTimeout(r, 80)); // desenul cu coduri pentru export
+  const [mode, setMode] = useState<"normal" | "clean" | "coded">("normal");
+  const wait = () => new Promise((r) => setTimeout(r, 120));
+  const run = async (fn: () => unknown, label: string, m: "clean" | "coded" = "coded") => {
+    usePid.getState().select(null);
+    setMode(m);
+    await wait();
     try { await fn(); toast.success(`${label} generat`); } catch (e) { console.error(e); toast.error(`${label} nu a putut fi generat`); }
-    finally { setExporting(false); }
+    finally { setMode("normal"); }
+  };
+  const pdf = async () => {
+    const svg = svgRef.current!;
+    const clean = schemeSvgString(svg);
+    setMode("coded");
+    await wait();
+    const coded = schemeSvgString(svg);
+    if (clean && coded) await exportSchemePdf(clean, coded, scheme, stats);
   };
 
   return (
@@ -96,7 +106,7 @@ function App() {
               <Button size="sm" variant="secondary" className="gap-1.5"><FileText className="h-4 w-4" />Export schemă</Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => svgRef.current && run(() => exportSchemePdf(svgRef.current!, scheme, stats), "PDF cu cartuș și legendă")}>
+              <DropdownMenuItem onClick={() => svgRef.current && run(pdf, "PDF cu cartuș și legendă", "clean")}>
                 <FileText className="mr-2 h-4 w-4" />PDF A3 cu legendă și cartuș
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => svgRef.current && run(() => exportSchemePng(svgRef.current!, scheme.name), "PNG")}>
@@ -104,6 +114,9 @@ function App() {
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => svgRef.current && run(() => exportSchemeSvg(svgRef.current!, scheme.name), "SVG")}>
                 <FileCode2 className="mr-2 h-4 w-4" />Desen vectorial SVG
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => svgRef.current && run(() => exportSchemeDxf(svgRef.current!, scheme.name), "DXF")}>
+                <FileCode2 className="mr-2 h-4 w-4" />Desen DXF (AutoCAD)
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -116,7 +129,7 @@ function App() {
         <div className="grid h-full grid-cols-[230px_1fr_310px]">
           <Palette />
           <div className="relative min-w-0">
-            <PidCanvas svgRef={svgRef} showTags={exporting} />
+            <PidCanvas svgRef={svgRef} showTags={mode === "coded"} hideCodes={mode === "clean"} />
             <div className="pointer-events-none absolute left-3 top-3 flex max-w-[60%] flex-wrap gap-2 rounded-md border bg-card/90 px-3 py-1.5 text-[11px] backdrop-blur">
               {CIRCUIT_IDS.map((c) => (
                 <span key={c} className="flex items-center gap-1"><span className="h-0.5 w-4" style={{ background: circuitColor(scheme, c) }} />{CIRCUITS[c].name}</span>

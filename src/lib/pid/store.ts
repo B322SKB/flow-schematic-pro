@@ -38,6 +38,7 @@ interface State {
   addPipe: (from: Pipe["from"], to: Pipe["to"], opts?: { direct?: boolean }) => void;
   updatePipe: (id: string, p: Partial<Pipe>) => void;
   flipPipe: (id: string) => void;
+  insertOnPipe: (pipeId: string, type: SymbolType, x: number, y: number) => boolean;
   select: (s: State["selected"]) => void;
   removeSelected: () => void;
   setPipeDefaults: (p: Partial<PipeDefaults>) => void;
@@ -214,9 +215,13 @@ export const usePid = create<State>()(
           const st = get();
           if (from.node === to.node && from.port === to.port) return;
           const d = st.pipeDefaults;
+          // moștenire circuit / DN / debit de la conducta din aval (sau, altfel, de la o conductă vecină)
+          const ps = st.scheme.pipes.filter((p) => !p.direct);
+          const src = ps.find((p) => p.from.node === to.node) ?? ps.find((p) => p.to.node === from.node)
+            ?? ps.find((p) => p.from.node === from.node || p.to.node === to.node);
           const pipe: Pipe = {
-            id: uid(), tag: "", from, to, dn: d.dn, material: d.material, joint: d.joint, circuit: d.circuit,
-            length: d.length, flow: d.flow, flowMode: "manual", routing: "auto", fittings: {},
+            id: uid(), tag: "", from, to, dn: src?.dn ?? d.dn, material: src?.material ?? d.material, joint: src?.joint ?? d.joint,
+            circuit: src?.circuit ?? d.circuit, length: d.length, flow: src?.flow ?? d.flow, flowMode: "manual", routing: "auto", fittings: {},
           };
           pipe.tag = pipeTag(pipe, st.scheme.pipes.map((p) => p.tag));
           pipe.length = opts?.direct ? 0 : routeLen(pipe, st.scheme);
@@ -238,10 +243,54 @@ export const usePid = create<State>()(
             }),
           })),
 
+        insertOnPipe: (pipeId, type, x, y) => {
+          const st = get();
+          const s0 = st.scheme;
+          const pipe = s0.pipes.find((p) => p.id === pipeId);
+          const sym = getSymbol(type);
+          if (!pipe || pipe.direct || sym.ports.length < 2) return false;
+          const pts = pipeRoute(pipe, s0);
+          let best = { d: Infinity, x, y, i: 1, t: 0.5 };
+          let acc = 0, total = 0;
+          const segL: number[] = [];
+          for (let i = 1; i < pts.length; i++) { const L = Math.hypot(pts[i]!.x - pts[i - 1]!.x, pts[i]!.y - pts[i - 1]!.y); segL.push(L); total += L; }
+          for (let i = 1; i < pts.length; i++) {
+            const a = pts[i - 1]!, b = pts[i]!;
+            const L2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2 || 1;
+            const t = Math.max(0, Math.min(1, ((x - a.x) * (b.x - a.x) + (y - a.y) * (b.y - a.y)) / L2));
+            const px = a.x + t * (b.x - a.x), py = a.y + t * (b.y - a.y);
+            const dd = Math.hypot(px - x, py - y);
+            if (dd < best.d) best = { d: dd, x: px, y: py, i, t };
+          }
+          for (let i = 1; i < best.i; i++) acc += segL[i - 1]!;
+          acc += segL[best.i - 1]! * best.t;
+          const frac = total ? acc / total : 0.5;
+          const a = pts[best.i - 1]!, b = pts[best.i]!;
+          const vert = Math.abs(b.x - a.x) < 1;
+          const rotation = vert ? (b.y > a.y ? 90 : 270) : b.x >= a.x ? 0 : 180;
+          const [pa, pb] = [sym.ports[0]!, sym.ports[1]!];
+          // centrul elementului pe traseu (portul a spre amonte)
+          const mid = { x: ((pa.x + pb.x) / 2 - sym.w / 2), y: ((pa.y + pb.y) / 2 - sym.h / 2) };
+          const rad = (rotation * Math.PI) / 180;
+          const node: PidNode = {
+            id: uid(), type, rotation, tag: nextTag(sym.prefix, s0.nodes.map((n) => n.tag)), dpFixed: sym.dpDefault,
+            x: best.x - (mid.x * Math.cos(rad) - mid.y * Math.sin(rad)),
+            y: best.y - (mid.x * Math.sin(rad) + mid.y * Math.cos(rad)),
+            ...(sym.riser ? { z: 1 } : {}),
+          };
+          const L1 = Math.round(pipe.length * frac * 10) / 10;
+          const p1: Pipe = { ...pipe, to: { node: node.id, port: pa.id }, length: L1, points: undefined };
+          const p2: Pipe = { ...pipe, id: uid(), from: { node: node.id, port: pb.id }, length: Math.round((pipe.length - L1) * 10) / 10, fittings: {}, points: undefined };
+          p2.tag = pipeTag(p2, s0.pipes.map((p) => p.tag));
+          patchScheme((s) => ({ ...s, nodes: [...s.nodes, node], pipes: s.pipes.flatMap((p) => (p.id === pipeId ? [p1, p2] : [p])) }),
+            { selected: { kind: "node", id: node.id } });
+          return true;
+        },
+
         flipPipe: (id) =>
           patchScheme((s) => ({
             ...s,
-            pipes: s.pipes.map((p) => (p.id === id ? { ...p, from: p.to, to: p.from } : p)),
+            pipes: s.pipes.map((p) => (p.id === id ? { ...p, from: p.to, to: p.from, points: p.points ? [...p.points].reverse() : undefined } : p)),
           })),
 
         select: (s) => set((st) => ({ selected: s, multi: s?.kind === "node" && st.multi.includes(s.id) ? st.multi : [] })),

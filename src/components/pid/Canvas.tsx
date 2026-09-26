@@ -11,6 +11,7 @@ type Drag =
   | { kind: "pan"; sx: number; sy: number; vx: number; vy: number }
   | { kind: "node"; id: string; ox: number; oy: number }
   | { kind: "box"; x0: number; y0: number }
+  | { kind: "seg"; pipeId: string; i: number; pts: { x: number; y: number }[]; horiz: boolean; x0: number; y0: number }
   | { kind: "code"; id: string; x0: number; y0: number; dx0: number; dy0: number }
   | null;
 
@@ -19,10 +20,10 @@ export function nodeDn(n: PidNode, scheme: Scheme) {
   return n.dn ?? scheme.pipes.find((p) => p.from.node === n.id || p.to.node === n.id)?.dn;
 }
 
-export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false }: {
-  svgRef?: React.RefObject<SVGSVGElement | null>; readOnly?: boolean; showTags?: boolean;
+export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false, hideCodes = false }: {
+  svgRef?: React.RefObject<SVGSVGElement | null>; readOnly?: boolean; showTags?: boolean; hideCodes?: boolean;
 }) {
-  const { scheme, selected, multi, grid, select, setMulti, updateNode, moveNodes, addPipe, addNode, removeSelected, duplicateNodes } = usePid();
+  const { scheme, selected, multi, grid, select, setMulti, updateNode, moveNodes, addPipe, addNode, removeSelected, duplicateNodes, updatePipe, insertOnPipe } = usePid();
   const innerRef = useRef<SVGSVGElement>(null);
   const svgRef = outerRef ?? innerRef;
   const pid = useId().replace(/:/g, "");
@@ -87,6 +88,17 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
     if (!drag) return;
     moved.current = true;
     if (drag.kind === "pan") setView((v) => ({ ...v, x: drag.vx + e.clientX - drag.sx, y: drag.vy + e.clientY - drag.sy }));
+    if (drag.kind === "seg") {
+      const P = drag.pts.map((p) => ({ ...p }));
+      let i = drag.i;
+      if (i - 1 === 0) { P.splice(1, 0, { ...P[0]! }); i++; }
+      if (i === P.length - 1) { P.splice(i, 0, { ...P[i]! }); }
+      const snap = (v: number) => Math.round(v / 5) * 5;
+      if (drag.horiz) { const y = snap(drag.pts[drag.i]!.y + w.y - drag.y0); P[i - 1]!.y = y; P[i]!.y = y; }
+      else { const x = snap(drag.pts[drag.i]!.x + w.x - drag.x0); P[i - 1]!.x = x; P[i]!.x = x; }
+      updatePipe(drag.pipeId, { points: P.slice(1, -1) });
+      return;
+    }
     if (drag.kind === "code") updateNode(drag.id, { codeDx: Math.round(drag.dx0 + w.x - drag.x0), codeDy: Math.round(drag.dy0 + w.y - drag.y0) });
     if (drag.kind === "node") {
       const n = scheme.nodes.find((x) => x.id === drag.id);
@@ -186,6 +198,23 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
           const t = e.dataTransfer.getData("application/pid-symbol");
           if (!t) return;
           const w = toWorld(e.clientX, e.clientY);
+          // plasare peste o conductă existentă → elementul se inserează în traseu
+          const sym = getSymbol(t);
+          if (sym.ports.length >= 2) {
+            let hit: string | null = null, hd = 14 / view.k;
+            for (const p of scheme.pipes) {
+              if (p.direct) continue;
+              const pts = pipeRoute(p, scheme);
+              for (let i = 1; i < pts.length; i++) {
+                const a = pts[i - 1]!, b = pts[i]!;
+                const L2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2 || 1;
+                const tt = Math.max(0, Math.min(1, ((w.x - a.x) * (b.x - a.x) + (w.y - a.y) * (b.y - a.y)) / L2));
+                const dd = Math.hypot(a.x + tt * (b.x - a.x) - w.x, a.y + tt * (b.y - a.y) - w.y);
+                if (dd < hd) { hd = dd; hit = p.id; }
+              }
+            }
+            if (hit && insertOnPipe(hit, t, w.x, w.y)) return;
+          }
           addNode(t, w.x, w.y);
         }}
       >
@@ -204,7 +233,14 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
             {scheme.pipes.map((p) => (
               <PipeView key={p.id} pipe={p} scheme={scheme} crossings={crossings} showTags={showTags}
                 selected={selected?.kind === "pipe" && selected.id === p.id}
-                onSelect={() => select({ kind: "pipe", id: p.id })} />
+                onSelect={() => select({ kind: "pipe", id: p.id })}
+                onSegDown={readOnly ? undefined : (e, i, pts) => {
+                  e.stopPropagation();
+                  moved.current = false;
+                  select({ kind: "pipe", id: p.id });
+                  const w = toWorld(e.clientX, e.clientY);
+                  setDrag({ kind: "seg", pipeId: p.id, i, pts, horiz: Math.abs(pts[i]!.y - pts[i - 1]!.y) < 1, x0: w.x, y0: w.y });
+                }} />
             ))}
             {scheme.nodes.map((n) => {
               const s = getSymbol(n.type);
@@ -212,10 +248,10 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
               const openPorts = s.ports.filter((pt) => !usedPorts.has(`${n.id}:${pt.id}`)).length;
               const incomplete = s.ports.length > 1 && openPorts === s.ports.length;
               const dn = s.bomGroup === "Vane" ? nodeDn(n, scheme) : undefined;
-              const codeText = s.code ? `${s.code}${dn ? ` DN${dn}` : ""}` : "";
+              const codeText = hideCodes ? "" : s.code ? `${s.code}${dn ? ` DN${dn}` : ""}` : "";
               const cdx = n.codeDx ?? 0, cdy = n.codeDy ?? 0;
               return (
-                <g key={n.id} transform={`translate(${n.x},${n.y}) rotate(${n.rotation})`} opacity={n.redundant ? 0.6 : 1}>
+                <g key={n.id} data-layer="ELEMENTE" transform={`translate(${n.x},${n.y}) rotate(${n.rotation})`} opacity={n.redundant ? 0.6 : 1}>
                   <g
                     transform={`translate(${-s.w / 2},${-s.h / 2})`}
                     style={{ cursor: readOnly ? "default" : "move", color: isSel ? "var(--primary)" : undefined }}
@@ -274,6 +310,11 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
                         {codeText}
                       </text>
                     )}
+                    {!!n.kw && (s.terminal || s.source || s.bomGroup === "Echipamente") && (
+                      <text x={0} y={s.h / 2 + (showTags ? 25 : 12) + ((s.terminal || s.source) && n.redundant ? 11 : 0)} textAnchor="middle" fontSize={9} fontFamily="var(--app-mono)" fill="var(--canvas-ink)" opacity={0.8} pointerEvents="none">
+                        {n.kw} kW{n.kwSens ? ` / ${n.kwSens} kW sens.` : ""}
+                      </text>
+                    )}
                     {s.hasVolume && !!n.volume && (
                       <text x={cdx} y={-s.h / 2 - 6 + cdy - 12} textAnchor="middle" fontSize={9} fontFamily="var(--app-mono)" fill="var(--canvas-ink)" opacity={0.7} pointerEvents="none">
                         V={n.volume} l
@@ -324,8 +365,9 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
   );
 }
 
-function PipeView({ pipe, scheme, crossings, selected, onSelect, showTags }: {
+function PipeView({ pipe, scheme, crossings, selected, onSelect, showTags, onSegDown }: {
   pipe: Pipe; scheme: Scheme; crossings: { x: number; y: number; pipeId: string }[]; selected: boolean; onSelect: () => void; showTags: boolean;
+  onSegDown?: ((e: React.PointerEvent, i: number, pts: { x: number; y: number }[]) => void) | undefined;
 }) {
   const pts = pipeRoute(pipe, scheme);
   if (pts.length < 2) return null;
@@ -370,11 +412,25 @@ function PipeView({ pipe, scheme, crossings, selected, onSelect, showTags }: {
   const ang = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
   const horiz = Math.abs(b.y - a.y) < 1;
   return (
-    <g onPointerDown={(e) => { e.stopPropagation(); onSelect(); }} onClick={(e) => e.stopPropagation()} style={{ cursor: "pointer" }}
+    <g data-layer={`CONDUCTE_${pipe.circuit}`} onPointerDown={(e) => { e.stopPropagation(); onSelect(); }} onClick={(e) => e.stopPropagation()} style={{ cursor: "pointer" }}
       opacity={pipe.disabled ? 0.4 : 1}>
       <path d={d} fill="none" stroke="transparent" strokeWidth={14} />
       {selected && <path d={d} fill="none" stroke="var(--primary)" strokeWidth={w + 5} strokeOpacity={0.35} />}
       <path d={d} fill="none" stroke={color} strokeWidth={w} strokeLinejoin="round" strokeDasharray={pipe.disabled ? "8 6" : undefined} />
+      {selected && onSegDown && pts.slice(1).map((p, k) => {
+        const q = pts[k]!, hz = Math.abs(p.y - q.y) < 1;
+        if (Math.hypot(p.x - q.x, p.y - q.y) < 4) return null;
+        return (
+          <g key={k}>
+            <line x1={q.x} y1={q.y} x2={p.x} y2={p.y} stroke="transparent" strokeWidth={12}
+              style={{ cursor: hz ? "ns-resize" : "ew-resize" }} onPointerDown={(e) => onSegDown(e, k + 1, pts)} />
+            <rect x={(p.x + q.x) / 2 - 4} y={(p.y + q.y) / 2 - 4} width={8} height={8} fill="var(--primary)" stroke="var(--canvas-bg)"
+              style={{ cursor: hz ? "ns-resize" : "ew-resize" }} onPointerDown={(e) => onSegDown(e, k + 1, pts)}>
+              <title>Trage pentru a muta tronsonul</title>
+            </rect>
+          </g>
+        );
+      })}
       {best > 30 && <path d="M-7 -5 L5 0 L-7 5 Z" fill={color} transform={`translate(${mx},${my}) rotate(${ang})`} />}
       {best > 50 && (
         <g pointerEvents="none" fontFamily="var(--app-mono)">

@@ -44,6 +44,19 @@ export function pipeRoute(pipe: Pipe, scheme: Scheme): { x: number; y: number }[
   const a = portPos(scheme, pipe.from.node, pipe.from.port);
   const b = portPos(scheme, pipe.to.node, pipe.to.port);
   if (!a || !b) return [];
+  if (pipe.points?.length && !pipe.direct) {
+    const P = pipe.points.map((p) => ({ ...p }));
+    if (P.length === 1) {
+      const p = P[0]!, o1 = { x: a.x, y: b.y }, o2 = { x: b.x, y: a.y };
+      P[0] = Math.hypot(p.x - o1.x, p.y - o1.y) <= Math.hypot(p.x - o2.x, p.y - o2.y) ? o1 : o2;
+    } else {
+      const f = P[0]!, f1 = P[1]!;
+      if (Math.abs(f.y - f1.y) < 1) f.x = a.x; else f.y = a.y;
+      const l = P[P.length - 1]!, l1 = P[P.length - 2]!;
+      if (Math.abs(l.y - l1.y) < 1) l.x = b.x; else l.y = b.y;
+    }
+    return [a, ...P, b];
+  }
   if (Math.abs(a.x - b.x) < 1 || Math.abs(a.y - b.y) < 1) return [a, b];
   if (pipe.routing === "vh") return [a, { x: a.x, y: b.y }, b];
   if (pipe.routing === "hv") return [a, { x: b.x, y: a.y }, b];

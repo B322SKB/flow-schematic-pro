@@ -39,6 +39,7 @@ export interface Pipe {
   kw?: number | undefined;
   deltaT?: number | undefined;
   routing: "auto" | "hv" | "vh";
+  points?: { x: number; y: number }[] | undefined; // puncte intermediare trase manual
   fittings: Partial<Record<FittingId, number>>;
   direct?: boolean | undefined; // legătură directă între elemente (fără țeavă)
   disabled?: boolean | undefined; // tronson scos din funcțiune (scenariu inel)

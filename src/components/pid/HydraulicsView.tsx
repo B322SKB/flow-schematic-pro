@@ -115,7 +115,7 @@ export function HydraulicsView() {
                 <TableRow key={p.id} className="cursor-pointer" onClick={() => select({ kind: "pipe", id: p.id })}>
                   <TableCell className="whitespace-nowrap"><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: circuitColor(scheme, p.circuit) }} />{p.tag}</TableCell>
                   <TableCell className="whitespace-nowrap font-sans">{getMaterial(p.material).short} {sizeLabel(p.material, p.dn)}</TableCell>
-                  <TableCell>{computePipe(p, scheme, fp).L.toFixed(1)}</TableCell>
+                  <TableCell>{r.L.toFixed(1)}</TableCell>
                   <TableCell>
                     <Input type="number" step="0.1" className="h-7 w-20 font-mono text-xs"
                       value={qu === "m3h" ? p.flow : +(p.flow / 3.6).toFixed(3)}

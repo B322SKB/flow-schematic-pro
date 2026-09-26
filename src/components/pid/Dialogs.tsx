@@ -196,8 +196,23 @@ export function ProjectsDialog() {
           <DialogTitle>Proiectele mele</DialogTitle>
           <DialogDescription>Salvate în acest browser. Folosește export/import pentru copii de siguranță.</DialogDescription>
         </DialogHeader>
+        <div className="space-y-2 rounded-md border p-3">
+          <p className="text-xs font-medium">Proiect nou dintr-un șablon</p>
+          <div className="grid gap-1.5">
+            {TEMPLATES.map((t) => (
+              <button key={t.id} type="button"
+                className="flex items-start gap-2 rounded-md border px-2.5 py-2 text-left transition-colors hover:border-primary hover:bg-accent/40"
+                onClick={() => { newProject(t.name, t.id); toast.success(`Proiect creat: ${t.name}`); }}>
+                <FilePlus2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                <span>
+                  <span className="block text-xs font-medium">{t.name}</span>
+                  <span className="block text-[11px] text-muted-foreground">{t.desc}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" onClick={() => newProject("Proiect nou")}><FilePlus2 className="mr-1.5 h-4 w-4" />Proiect nou</Button>
           <Button size="sm" variant="secondary" onClick={() => duplicateProject(activeId)}><Copy className="mr-1.5 h-4 w-4" />Duplică</Button>
           <Button size="sm" variant="secondary" onClick={() => exportProjectFile(scheme)}><Download className="mr-1.5 h-4 w-4" />Export fișier</Button>
           <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()}><Upload className="mr-1.5 h-4 w-4" />Import fișier</Button>

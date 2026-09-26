@@ -7,7 +7,7 @@ import { getSymbol, syncCustomSymbols, type CustomSymbol, type SymbolType } from
 import type { Pipe, PidNode, Scheme } from "./types";
 import { pipeRoute } from "./hydraulics";
 import { flowFromKw, fluidProps } from "./fluids";
-import { propagateFlows } from "./network";
+import { propagateFlows, totalDemand } from "./network";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 export const PX_PER_M = 40;

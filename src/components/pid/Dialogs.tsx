@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CIRCUIT_IDS, CIRCUITS, circuitColor, DEFAULT_CIRCUIT_COLORS } from "@/lib/pid/catalog";
 import { FLUID_LABEL, fluidProps, type FluidId } from "@/lib/pid/fluids";
-import { usePid } from "@/lib/pid/store";
+import { TEMPLATES, usePid } from "@/lib/pid/store";
 import type { CustomSymbol } from "@/lib/pid/symbols";
 import { exportProjectFile } from "@/lib/pid/export";
 import { Field, Sel } from "./fields";

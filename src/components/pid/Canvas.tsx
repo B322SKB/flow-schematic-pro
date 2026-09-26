@@ -251,7 +251,7 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
               const codeText = hideCodes ? "" : s.code ? `${s.code}${dn ? ` DN${dn}` : ""}` : "";
               const cdx = n.codeDx ?? 0, cdy = n.codeDy ?? 0;
               return (
-                <g key={n.id} transform={`translate(${n.x},${n.y}) rotate(${n.rotation})`} opacity={n.redundant ? 0.6 : 1}>
+                <g key={n.id} data-layer="ELEMENTE" transform={`translate(${n.x},${n.y}) rotate(${n.rotation})`} opacity={n.redundant ? 0.6 : 1}>
                   <g
                     transform={`translate(${-s.w / 2},${-s.h / 2})`}
                     style={{ cursor: readOnly ? "default" : "move", color: isSel ? "var(--primary)" : undefined }}
@@ -412,7 +412,7 @@ function PipeView({ pipe, scheme, crossings, selected, onSelect, showTags, onSeg
   const ang = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
   const horiz = Math.abs(b.y - a.y) < 1;
   return (
-    <g onPointerDown={(e) => { e.stopPropagation(); onSelect(); }} onClick={(e) => e.stopPropagation()} style={{ cursor: "pointer" }}
+    <g data-layer={`CONDUCTE_${pipe.circuit}`} onPointerDown={(e) => { e.stopPropagation(); onSelect(); }} onClick={(e) => e.stopPropagation()} style={{ cursor: "pointer" }}
       opacity={pipe.disabled ? 0.4 : 1}>
       <path d={d} fill="none" stroke="transparent" strokeWidth={14} />
       {selected && <path d={d} fill="none" stroke="var(--primary)" strokeWidth={w + 5} strokeOpacity={0.35} />}

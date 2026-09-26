@@ -24,43 +24,56 @@ export interface FlowInfo {
 }
 
 /**
- * Legea I a lui Kirchhoff: debitul unui tronson = suma cererilor consumatorilor
- * care rămân fără alimentare dacă tronsonul este eliminat.
- * Pe tronsoanele de inel (eliminarea nu întrerupe alimentarea) debitul rămâne manual.
+ * Legea I a lui Kirchhoff, pe graful orientat de sensul de curgere al conductelor:
+ * debitul unui tronson = suma cererilor consumatorilor deserviți în aval (sau, pentru
+ * tronsoanele de retur, în amonte). Dacă există o cale paralelă între aceleași noduri
+ * (inel), repartiția nu este univocă și debitul rămâne manual.
  */
 export function propagateFlows(scheme: Scheme, fp: FluidProps): Map<string, FlowInfo> {
   const out = new Map<string, FlowInfo>();
   const pipes = scheme.pipes.filter((p) => !p.disabled);
-  const sources = scheme.nodes.filter((n) => getSymbol(n.type).source && !n.redundant).map((n) => n.id);
-  if (!sources.length || !pipes.length) return out;
+  if (!pipes.length) return out;
 
   const demand = new Map<string, number>();
   for (const n of scheme.nodes) demand.set(n.id, nodeDemand(n, scheme, fp));
 
-  const reach = (skip: string | null) => {
-    const seen = new Set(sources);
-    const q = [...sources];
+  const outAdj = new Map<string, typeof pipes>();
+  const inAdj = new Map<string, typeof pipes>();
+  for (const p of pipes) {
+    const o = outAdj.get(p.from.node) ?? []; o.push(p); outAdj.set(p.from.node, o);
+    const i = inAdj.get(p.to.node) ?? []; i.push(p); inAdj.set(p.to.node, i);
+  }
+
+  /** Nodurile atinse urmând sensul de curgere (forward) sau invers, fără tronsonul `skip`. */
+  const reach = (start: string, skip: string, forward: boolean) => {
+    const seen = new Set<string>([start]);
+    const q = [start];
     while (q.length) {
       const id = q.shift()!;
-      for (const p of pipes) {
+      for (const p of (forward ? outAdj : inAdj).get(id) ?? []) {
         if (p.id === skip) continue;
-        const nb = p.from.node === id ? p.to.node : p.to.node === id ? p.from.node : null;
-        if (nb && !seen.has(nb)) { seen.add(nb); q.push(nb); }
+        const nb = forward ? p.to.node : p.from.node;
+        if (!seen.has(nb)) { seen.add(nb); q.push(nb); }
       }
     }
     return seen;
   };
+  const sum = (ids: Set<string>) => {
+    let f = 0;
+    for (const id of ids) f += demand.get(id) ?? 0;
+    return f;
+  };
 
-  const all = reach(null);
   for (const p of pipes) {
-    const without = reach(p.id);
-    let f = 0, cut = 0;
-    for (const id of all) {
-      if (without.has(id)) continue;
-      cut++;
-      f += demand.get(id) ?? 0;
+    const down = reach(p.to.node, p.id, true);
+    // cale paralelă între aceleași noduri => tronson de inel
+    if (down.has(p.from.node) && reach(p.from.node, p.id, true).has(p.to.node)) {
+      out.set(p.id, { flow: 0, ambiguous: true });
+      continue;
     }
-    out.set(p.id, cut === 0 ? { flow: 0, ambiguous: true } : { flow: Math.round(f * 100) / 100, ambiguous: false });
+    const up = reach(p.from.node, p.id, false);
+    const f = Math.max(sum(down), sum(up));
+    out.set(p.id, { flow: Math.round(f * 100) / 100, ambiguous: false });
   }
   return out;
 }

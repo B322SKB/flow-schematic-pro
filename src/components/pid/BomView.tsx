@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { FileSpreadsheet, FileText, FileDown } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -38,8 +39,8 @@ export function BomView() {
             </TableHeader>
             <TableBody>
               {groups.map((g) => (
-                <>
-                  <TableRow key={g} className="bg-muted/40 hover:bg-muted/40"><TableCell colSpan={5} className="py-1.5 text-xs font-semibold uppercase tracking-wider text-primary">{g.slice(3)}</TableCell></TableRow>
+                <Fragment key={g}>
+                  <TableRow className="bg-muted/40 hover:bg-muted/40"><TableCell colSpan={5} className="py-1.5 text-xs font-semibold uppercase tracking-wider text-primary">{g.slice(3)}</TableCell></TableRow>
                   {rows.filter((r) => r.group === g).map((r) => (
                     <TableRow key={g + r.item + r.spec + r.unit}>
                       <TableCell className="font-medium">{r.item}</TableCell>
@@ -49,7 +50,7 @@ export function BomView() {
                       <TableCell className="max-w-[280px] truncate font-mono text-xs text-muted-foreground" title={r.tags}>{r.tags}</TableCell>
                     </TableRow>
                   ))}
-                </>
+                </Fragment>
               ))}
             </TableBody>
           </Table>

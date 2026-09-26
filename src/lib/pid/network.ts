@@ -89,7 +89,9 @@ export function propagateFlows(scheme: Scheme, fp: FluidProps): Map<string, Flow
     for (const id of ids) f += demand.get(id) ?? 0;
     return f;
   };
-  const hasSource = (ids: Set<string>) => [...ids].some((id) => isSource.has(id));
+  /** Sursele accesibile exclusiv dintr-un capăt (buclele închise ating aceeași sursă din ambele capete). */
+  const exclusiveSource = (x: Set<string>, y: Set<string>) =>
+    [...x].some((id) => isSource.has(id) && !y.has(id));
 
   for (const p of pipes) {
     const a = reach(p.from.node, p.id);
@@ -98,18 +100,22 @@ export function propagateFlows(scheme: Scheme, fp: FluidProps): Map<string, Flow
       continue;
     }
     const b = reach(p.to.node, p.id);
-    const sa = hasSource(a), sb = hasSource(b);
+    const sa = exclusiveSource(a, b), sb = exclusiveSource(b, a);
+    const da = sum(a), db = sum(b);
     let f = 0;
     let reason: string | undefined;
-    if (sa && !sb) f = sum(b);
-    else if (sb && !sa) f = sum(a);
-    else if (!sa && !sb) reason = "niciun capăt nu ajunge la o sursă";
+    if (sa && !sb) f = db;
+    else if (sb && !sa) f = da;
+    else if (da > 0 && db === 0) f = da;
+    else if (db > 0 && da === 0) f = db;
+    else if (da === 0 && db === 0) f = 0;
     else {
-      out.set(p.id, { flow: 0, ambiguous: true, reason: "sursă pe ambele capete" });
+      out.set(p.id, { flow: 0, ambiguous: true, reason: "repartiție neunivocă (buclă)" });
       continue;
     }
     out.set(p.id, { flow: Math.round(f * 100) / 100, ambiguous: false, reason });
   }
+
   return out;
 }
 

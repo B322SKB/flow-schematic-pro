@@ -57,7 +57,7 @@ function Prop({ k, v }: { k: string; v: string }) {
 }
 
 export function HydraulicsView() {
-  const { scheme, updatePipe, select } = usePid();
+  const { scheme, updatePipe, select, applyAutoFlows } = usePid();
   const [pu, setPu] = useState<PUnit>("kPa");
   const [qu, setQu] = useState<"m3h" | "ls">("m3h");
   const fp = fluidProps(scheme.fluid, scheme.concentration, scheme.temperature);
@@ -71,6 +71,18 @@ export function HydraulicsView() {
   }
   const total = results.reduce((s, x) => s + x.r.dpTotal, 0);
   const warns = results.filter((x) => x.r.velWarn).length;
+  const duty = useMemo(() => pumpDuty(scheme, fp), [scheme, fp]);
+  const auto = useMemo(() => propagateFlows(scheme, fp), [scheme, fp]);
+  const vol = useMemo(() => volumeTotals(scheme), [scheme]);
+  const exp = useMemo(() => expansionSizing(scheme), [scheme]);
+  const critical = duty.path?.pipes ?? [];
+  const critSet = new Set(critical);
+  const tagOf = (id: string) => scheme.pipes.find((p) => p.id === id)?.tag ?? "";
+  const drift = scheme.pipes.filter((p) => {
+    const a = auto.get(p.id);
+    return a && !a.ambiguous && Math.abs(a.flow - p.flow) > 0.05;
+  });
+  const ringPipes = [...auto.entries()].filter(([, v]) => v.ambiguous).map(([id]) => tagOf(id));
 
   return (
     <div className="h-full overflow-auto p-4">

@@ -45,6 +45,12 @@ export function propagateFlows(scheme: Scheme, fp: FluidProps): Map<string, Flow
     if (sym.source) isSource.add(n.id);
     if (sym.source || sym.terminal) blocked.add(n.id);
   }
+  if (!isSource.size) {
+    for (const p of pipes) out.set(p.id, { flow: 0, ambiguous: true, reason: "nicio sursă (chiller) în schemă" });
+    return out;
+  }
+
+
 
   const adj = new Map<string, typeof pipes>();
   for (const p of pipes) {

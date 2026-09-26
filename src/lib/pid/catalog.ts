@@ -104,3 +104,11 @@ export const CIRCUIT_PREFIX: Record<CircuitId, string> = {
 /** Distanța între cuplele / îmbinările intermediare pe conductă (m). */
 export const COUPLING_SPACING = 2;
 
+
+/** Culoarea efectivă a unui circuit (personalizată la nivel de proiect). */
+export function circuitColor(
+  scheme: { circuitColors?: Partial<Record<CircuitId, string>> } | undefined,
+  id: CircuitId,
+) {
+  return scheme?.circuitColors?.[id] ?? DEFAULT_CIRCUIT_COLORS[id];
+}

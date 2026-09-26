@@ -37,18 +37,24 @@ export function propagateFlows(scheme: Scheme, fp: FluidProps): Map<string, Flow
   if (!pipes.length) return out;
 
   const demand = new Map<string, number>();
-  const isSource = new Set<string>();
+  const isSource = new Set<string>(); // surse active (cele redundante nu debitează)
+  const anySource = new Set<string>();
   const blocked = new Set<string>(); // noduri prin care circuitul nu se traversează
   for (const n of scheme.nodes) {
     const sym = getSymbol(n.type);
     demand.set(n.id, nodeDemand(n, scheme, fp));
-    if (sym.source) isSource.add(n.id);
+    if (sym.source) {
+      anySource.add(n.id);
+      if (!n.redundant) isSource.add(n.id);
+    }
     if (sym.source || sym.terminal) blocked.add(n.id);
   }
+  if (!isSource.size) for (const id of anySource) isSource.add(id);
   if (!isSource.size) {
     for (const p of pipes) out.set(p.id, { flow: 0, ambiguous: true, reason: "nicio sursă (chiller) în schemă" });
     return out;
   }
+
 
 
 

@@ -18,6 +18,7 @@ export interface SymbolDef {
   terminal?: boolean; // echipament terminal de răcire (putere sensibilă / totală)
   source?: boolean; // sursă (chiller)
   hasVolume?: boolean; // are volum (litri)
+  roles?: Record<string, "s" | "r">; // porturi Tur (s) / Retur (r)
   render: () => ReactNode;
 }
 
@@ -61,35 +62,37 @@ const defs = [
   // Equipment
   { type: "chiller", source: true, name: "Chiller", category: "Echipamente", prefix: "CH", code: "CH", w: 120, h: 70, bomGroup: "Echipamente", dpDefault: 45,
     ports: [{ id: "a", x: 0, y: 20 }, { id: "b", x: 0, y: 50 }, { id: "c", x: 120, y: 20 }, { id: "d", x: 120, y: 50 }],
+    roles: { a: "s", b: "r", c: "s", d: "r" },
     render: () => (<g><rect x={4} y={4} width={112} height={62} rx={4} {...S} fill="var(--canvas-bg)" /><path d="M20 35 h80 M30 20 l10 15 -10 15 M90 20 l-10 15 10 15" {...S} strokeWidth={1.5} /><text x={60} y={62} textAnchor="middle" fontSize={9} fill="currentColor">CHILLER</text><line x1={0} y1={20} x2={4} y2={20} {...S} /><line x1={0} y1={50} x2={4} y2={50} {...S} /><line x1={116} y1={20} x2={120} y2={20} {...S} /><line x1={116} y1={50} x2={120} y2={50} {...S} /></g>) },
   { type: "boiler", name: "Cazan", category: "Echipamente", prefix: "B", code: "CZ", w: 70, h: 90, bomGroup: "Echipamente", dpDefault: 15,
     ports: [{ id: "a", x: 35, y: 0 }, { id: "b", x: 35, y: 90 }],
     render: () => (<g><rect x={5} y={5} width={60} height={80} rx={6} {...S} fill="var(--canvas-bg)" /><path d="M25 65 q10 -25 10 -30 q10 15 10 30 z" {...S} /><line x1={35} y1={0} x2={35} y2={5} {...S} /><line x1={35} y1={85} x2={35} y2={90} {...S} /></g>) },
-  { type: "hex_plate", name: "Schimbător în plăci", category: "Echipamente", prefix: "HE", code: "SC", w: 60, h: 80, bomGroup: "Echipamente", dpDefault: 25,
+  { type: "hex_plate", roles: { a: "s", b: "r", c: "s", d: "r" }, name: "Schimbător în plăci", category: "Echipamente", prefix: "HE", code: "SC", w: 60, h: 80, bomGroup: "Echipamente", dpDefault: 25,
     ports: [{ id: "a", x: 0, y: 15 }, { id: "b", x: 0, y: 65 }, { id: "c", x: 60, y: 15 }, { id: "d", x: 60, y: 65 }],
     render: () => (<g><rect x={6} y={4} width={48} height={72} {...S} fill="var(--canvas-bg)" />{[16, 24, 32, 40].map((x) => <line key={x} x1={x} y1={8} x2={x} y2={72} {...S} strokeWidth={1} />)}<path d="M6 76 L54 4" {...S} strokeWidth={1} /><line x1={0} y1={15} x2={6} y2={15} {...S} /><line x1={0} y1={65} x2={6} y2={65} {...S} /><line x1={54} y1={15} x2={60} y2={15} {...S} /><line x1={54} y1={65} x2={60} y2={65} {...S} /></g>) },
-  { type: "hex_shell", name: "Schimbător manta-tub", category: "Echipamente", prefix: "HE", code: "SMT", w: 100, h: 50, bomGroup: "Echipamente", dpDefault: 30,
+  { type: "hex_shell", roles: { a: "s", b: "r", c: "s", d: "r" }, name: "Schimbător manta-tub", category: "Echipamente", prefix: "HE", code: "SMT", w: 100, h: 50, bomGroup: "Echipamente", dpDefault: 30,
     ports: [{ id: "a", x: 0, y: 25 }, { id: "b", x: 100, y: 25 }, { id: "c", x: 30, y: 0 }, { id: "d", x: 70, y: 50 }],
     render: () => (<g><rect x={8} y={8} width={84} height={34} rx={17} {...S} fill="var(--canvas-bg)" /><path d="M8 25 h14 l8 -10 l10 20 l10 -20 l10 20 l10 -20 l8 10 h14" {...S} strokeWidth={1.5} /><line x1={0} y1={25} x2={8} y2={25} {...S} /><line x1={92} y1={25} x2={100} y2={25} {...S} /><line x1={30} y1={0} x2={30} y2={8} {...S} /><line x1={70} y1={42} x2={70} y2={50} {...S} /></g>) },
-  { type: "buffer_tank", hasVolume: true, name: "Rezervor tampon", category: "Echipamente", prefix: "TK", code: "RT", w: 60, h: 110, bomGroup: "Echipamente", dpDefault: 2,
+  { type: "buffer_tank", hasVolume: true, roles: { a: "s", b: "r", c: "s", d: "r" }, name: "Rezervor tampon", category: "Echipamente", prefix: "TK", code: "RT", w: 60, h: 110, bomGroup: "Echipamente", dpDefault: 2,
     ports: [{ id: "a", x: 0, y: 25 }, { id: "b", x: 0, y: 85 }, { id: "c", x: 60, y: 25 }, { id: "d", x: 60, y: 85 }],
     render: () => (<g><rect x={6} y={5} width={48} height={100} rx={24} {...S} fill="var(--canvas-bg)" /><line x1={0} y1={25} x2={6} y2={25} {...S} /><line x1={0} y1={85} x2={6} y2={85} {...S} /><line x1={54} y1={25} x2={60} y2={25} {...S} /><line x1={54} y1={85} x2={60} y2={85} {...S} /></g>) },
   { type: "expansion", hasVolume: true, name: "Vas de expansiune", category: "Echipamente", prefix: "EV", code: "VE", w: 50, h: 70, bomGroup: "Echipamente",
     ports: [{ id: "a", x: 25, y: 70 }],
     render: () => (<g><rect x={5} y={5} width={40} height={55} rx={20} {...S} fill="var(--canvas-bg)" /><path d="M5 32 q10 -6 20 0 t20 0" {...S} strokeWidth={1.5} /><line x1={25} y1={60} x2={25} y2={70} {...S} /></g>) },
   { type: "ahu_coil", terminal: true, name: "Baterie răcire/încălzire", category: "Echipamente", prefix: "CL", code: "BR", w: 60, h: 60, bomGroup: "Echipamente", dpDefault: 20,
+    roles: { a: "s", b: "r" },
     ports: [{ id: "a", x: 0, y: 15 }, { id: "b", x: 0, y: 45 }],
     render: () => (<g><rect x={6} y={4} width={50} height={52} {...S} fill="var(--canvas-bg)" /><path d="M6 4 L56 56 M56 4 L6 56" {...S} strokeWidth={1} /><line x1={0} y1={15} x2={6} y2={15} {...S} /><line x1={0} y1={45} x2={6} y2={45} {...S} /></g>) },
   // Data-center cooling equipment
-  { type: "ccu", terminal: true, name: "Close Control Unit (CCU)", category: "Echipamente", prefix: "CCU", code: "CCU", w: 100, h: 70, bomGroup: "Echipamente", dpDefault: 35,
+  { type: "ccu", terminal: true, roles: { a: "s", b: "r", c: "s", d: "r" }, name: "Close Control Unit (CCU)", category: "Echipamente", prefix: "CCU", code: "CCU", w: 100, h: 70, bomGroup: "Echipamente", dpDefault: 35,
     ports: equipPorts4, render: () => boxEquip("CCU", "CLOSE CONTROL") },
-  { type: "inrow", terminal: true, name: "Unitate In-Row (IRU)", category: "Echipamente", prefix: "IRU", code: "IRU", w: 100, h: 70, bomGroup: "Echipamente", dpDefault: 30,
+  { type: "inrow", terminal: true, roles: { a: "s", b: "r", c: "s", d: "r" }, name: "Unitate In-Row (IRU)", category: "Echipamente", prefix: "IRU", code: "IRU", w: 100, h: 70, bomGroup: "Echipamente", dpDefault: 30,
     ports: equipPorts4, render: () => boxEquip("IRU", "IN-ROW") },
-  { type: "rdhx", terminal: true, name: "Rear Door Heat Exchanger", category: "Echipamente", prefix: "RDHX", code: "RDHX", w: 100, h: 70, bomGroup: "Echipamente", dpDefault: 25,
+  { type: "rdhx", terminal: true, roles: { a: "s", b: "r", c: "s", d: "r" }, name: "Rear Door Heat Exchanger", category: "Echipamente", prefix: "RDHX", code: "RDHX", w: 100, h: 70, bomGroup: "Echipamente", dpDefault: 25,
     ports: equipPorts4, render: () => boxEquip("RDHX", "REAR DOOR HX") },
-  { type: "cdu", terminal: true, name: "Cooling Distribution Unit", category: "Echipamente", prefix: "CDU", code: "CDU", w: 100, h: 70, bomGroup: "Echipamente", dpDefault: 60,
+  { type: "cdu", terminal: true, roles: { a: "s", b: "r", c: "s", d: "r" }, name: "Cooling Distribution Unit", category: "Echipamente", prefix: "CDU", code: "CDU", w: 100, h: 70, bomGroup: "Echipamente", dpDefault: 60,
     ports: equipPorts4, render: () => boxEquip("CDU", "LIQUID COOLING") },
-  { type: "fanwall", terminal: true, name: "Fan Wall (FW)", category: "Echipamente", prefix: "FW", code: "FW", w: 100, h: 70, bomGroup: "Echipamente", dpDefault: 35,
+  { type: "fanwall", terminal: true, roles: { a: "s", b: "r", c: "s", d: "r" }, name: "Fan Wall (FW)", category: "Echipamente", prefix: "FW", code: "FW", w: 100, h: 70, bomGroup: "Echipamente", dpDefault: 35,
     ports: equipPorts4,
     render: () => (<g><rect x={4} y={4} width={92} height={62} rx={4} {...S} fill="var(--canvas-bg)" /><circle cx={30} cy={35} r={11} {...S} strokeWidth={1.5} /><circle cx={50} cy={35} r={11} {...S} strokeWidth={1.5} /><circle cx={70} cy={35} r={11} {...S} strokeWidth={1.5} /><text x={50} y={16} textAnchor="middle" fontSize={13} fontWeight={700} fill="currentColor">FW</text><text x={50} y={62} textAnchor="middle" fontSize={8} fill="currentColor">FAN WALL</text><line x1={0} y1={20} x2={4} y2={20} {...S} /><line x1={0} y1={50} x2={4} y2={50} {...S} /><line x1={96} y1={20} x2={100} y2={20} {...S} /><line x1={96} y1={50} x2={100} y2={50} {...S} /></g>) },
   { type: "pressure_station", name: "Stație menținere presiune", category: "Echipamente", prefix: "SMP", code: "SMP", w: 60, h: 80, bomGroup: "Echipamente", dpDefault: 0,
@@ -149,6 +152,9 @@ const defs = [
   { type: "drain", name: "Golire / drenaj", category: "Fitinguri", prefix: "DR", code: "GD", w: 30, h: 40, bomGroup: "Fitinguri", ports: [{ id: "a", x: 15, y: 0 }],
     render: () => (<g><line x1={15} y1={0} x2={15} y2={20} {...S} /><path d="M5 20 L25 20 L15 34 Z" {...S} fill="var(--canvas-bg)" /></g>) },
   // Riser up / down
+  { type: "port_open", name: "Capăt liber conductă", category: "Traseu", prefix: "CP", code: "CP", w: 20, h: 20, bomGroup: "Fitinguri",
+    ports: [{ id: "a", x: 10, y: 10 }],
+    render: () => (<g><circle cx={10} cy={10} r={4} {...S} fill="var(--canvas-bg)" /><line x1={10} y1={10} x2={10} y2={10} {...S} /></g>) },
   { type: "riser_up", name: "Urcare conductă", category: "Traseu", prefix: "URC", code: "URC", w: 40, h: 40, bomGroup: "Fitinguri", riser: "up", K: 0.9,
     ports: [{ id: "a", x: 0, y: 20 }, { id: "b", x: 40, y: 20 }],
     render: () => (<g><line x1={0} y1={20} x2={9} y2={20} {...S} /><line x1={31} y1={20} x2={40} y2={20} {...S} /><circle cx={20} cy={20} r={11} {...S} fill="var(--canvas-bg)" /><circle cx={20} cy={20} r={4} fill="currentColor" /></g>) },

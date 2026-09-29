@@ -12,6 +12,8 @@ export function Palette() {
   const [q, setQ] = useState("");
   const addNode = usePid((s) => s.addNode);
   const customs = usePid((s) => s.scheme.customSymbols);
+  const modules = usePid((s) => s.modules);
+  const removeModule = usePid((s) => s.removeModule);
   const all: SymbolDef[] = [...SYMBOL_LIST, ...customs.map(customSymbolDef)];
   const list = all.filter((s) => `${s.name} ${s.code ?? ""}`.toLowerCase().includes(q.toLowerCase()));
   return (
@@ -21,6 +23,25 @@ export function Palette() {
         <Input placeholder="Caută simbol sau cod…" value={q} onChange={(e) => setQ(e.target.value)} className="h-8" />
         <CustomSymbolDialog />
       </div>
+      {modules.length > 0 && (
+        <div className="space-y-1.5 border-b p-3">
+          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Module salvate</div>
+          {modules.map((m) => (
+            <div key={m.id} draggable
+              onDragStart={(e) => e.dataTransfer.setData("application/pid-module", m.id)}
+              onDoubleClick={() => addNode("port_open", 500, 200)}
+              title={`${m.name} – ${m.nodes.length} elemente · trage pe planșă`}
+              className="group flex cursor-grab items-center justify-between rounded-md border bg-card px-2 py-1.5 text-xs transition-colors hover:border-primary">
+              <span className="truncate">{m.name} <span className="font-mono text-muted-foreground">({m.nodes.length})</span></span>
+              <button className="ml-2 text-destructive opacity-0 transition-opacity group-hover:opacity-100"
+                onClick={() => removeModule(m.id)} title="Șterge modulul">×</button>
+            </div>
+          ))}
+          <p className="text-[10px] leading-snug text-muted-foreground">
+            Trage modulul pe planșă · se re-tagulează automat. Selectezi elemente → „Salvează ca modul reutilizabil" în inspector.
+          </p>
+        </div>
+      )}
       <ScrollArea className="flex-1">
         <Accordion type="multiple" key={q ? "q" : "n"} defaultValue={q ? CATS : ["Echipamente"]} className="px-3 pb-3">
           {CATS.map((c) => {

@@ -70,6 +70,20 @@ export function buildBom(scheme: Scheme): BomRow[] {
     }
   }
 
+  // reducții automate la joncțiunile unde diametrul se schimbă (teuri cu ramificatie mai mică, schimbări de DN)
+  for (const n of scheme.nodes) {
+    const conn = scheme.pipes.filter((p) => !p.direct && (p.from.node === n.id || p.to.node === n.id));
+    const dns = [...new Set(conn.map((p) => p.dn))];
+    if (conn.length < 2 || dns.length < 2) continue;
+    const dmax = Math.max(...dns);
+    for (const d of dns) {
+      if (d >= dmax) continue;
+      const p = conn.find((q) => q.dn === d)!;
+      add("2. Fitinguri", "Reducție concentrică", `DN${dmax}→DN${d}`,
+        `${getMaterial(p.material).short} · generată automat la joncțiune`, 1, "buc", n.tag);
+    }
+  }
+
   for (const n of scheme.nodes) {
     const s = getSymbol(n.type);
     const pipe = scheme.pipes.find((p) => p.from.node === n.id || p.to.node === n.id);

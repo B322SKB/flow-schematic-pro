@@ -58,6 +58,7 @@ export interface Scheme {
   deltaT: number; // ΔT implicit pentru calculul debitului din kW
   circuitColors: Partial<Record<CircuitId, string>>;
   customSymbols: CustomSymbol[];
+  guides?: { id: string; dir: "h" | "v"; pos: number }[] | undefined; // linii ajutătoare de aliniere
   revision: string;
   updatedAt: number;
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, Sigma, Snowflake } from "lucide-react";
+import { AlertTriangle, Sigma, Snowflake, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { propagateFlows, pumpDuty } from "@/lib/pid/network";
@@ -65,7 +65,7 @@ function Prop({ k, v }: { k: string; v: string }) {
 }
 
 export function HydraulicsView() {
-  const { scheme, updatePipe, select, applyAutoFlows } = usePid();
+  const { scheme, updatePipe, select, applyAutoFlows, autoSizePipes } = usePid();
   const [pu, setPu] = useState<PUnit>("kPa");
   const [qu, setQu] = useState<"m3h" | "ls">("m3h");
   const fp = fluidProps(scheme.fluid, scheme.concentration, scheme.temperature);
@@ -138,6 +138,14 @@ export function HydraulicsView() {
 
             }}>
               <Sigma className="h-3.5 w-3.5" />Calculează debitele automat
+            </Button>
+            <Button size="sm" variant="secondary" className="w-full gap-1.5" onClick={() => {
+              const r = autoSizePipes();
+              toast.success(r.pipes || r.valves
+                ? `Auto-dimensionare: ${r.pipes} tronson(e) redimensionate · ${r.valves} vană(e) actualizate (v ≤ 1,2 m/s)`
+                : "Dimensiunile actuale sunt corecte pentru debitele existente.");
+            }}>
+              <Wand2 className="h-3.5 w-3.5" />Auto-dimensionare DN (v ≤ 1,2 m/s)
             </Button>
             {drift.length > 0 && (
               <p className="text-warning">

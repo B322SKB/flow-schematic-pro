@@ -1,4 +1,5 @@
-import { Trash2, RotateCw, ArrowLeftRight, Zap, Copy, Move, Lightbulb } from "lucide-react";
+import { useState } from "react";
+import { Trash2, RotateCw, ArrowLeftRight, Zap, Copy, Move, Lightbulb, Save } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { pipePower } from "@/lib/pid/power";
 import { Button } from "@/components/ui/button";
@@ -35,7 +36,7 @@ export function normalizePipe(p: Pipe, patch: Partial<Pipe>): Partial<Pipe> {
 }
 
 export function Inspector() {
-  const { scheme, selected, multi, grid, setGrid, updateNode, updatePipe, removeSelected, flipPipe, pipeDefaults, setPipeDefaults, duplicateNodes } = usePid();
+  const { scheme, selected, multi, multiPipes, grid, setGrid, updateNode, updatePipe, removeSelected, flipPipe, pipeDefaults, setPipeDefaults, duplicateNodes, saveModule } = usePid();
   const node = selected?.kind === "node" ? scheme.nodes.find((n) => n.id === selected.id) : undefined;
   const pipe = selected?.kind === "pipe" ? scheme.pipes.find((p) => p.id === selected.id) : undefined;
   const fp = fluidProps(scheme.fluid, scheme.concentration, scheme.temperature);
@@ -51,8 +52,13 @@ export function Inspector() {
               <Button size="sm" className="flex-1 gap-1.5" onClick={() => duplicateNodes(multi)}><Copy className="h-4 w-4" />Duplică grupul</Button>
               <Button size="sm" variant="destructive" onClick={removeSelected}><Trash2 className="h-4 w-4" /></Button>
             </div>
+            <Button size="sm" variant="secondary" className="w-full gap-1.5"
+              onClick={() => { const nm = prompt("Numele modulului (reutilizabil în orice proiect):", "Modul nou"); if (nm) saveModule(nm, multi); }}>
+              <Save className="h-4 w-4" />Salvează ca modul reutilizabil
+            </Button>
           </div>
         )}
+        {multiPipes.length > 0 && <MultiPipePanel />}
         {!node && !pipe && (
           <>
             <Field label="Pas grilă desen">
@@ -350,6 +356,40 @@ function DnAdvisor({ flow, material, dn, onPick }: { flow: number; material: Mat
         ))}
       </div>
       <p className="mt-2 text-[10px] text-muted-foreground">★ = cel mai mic DN cu viteză în limite și R ≤ 300 Pa/m. Click pentru a aplica.</p>
+    </div>
+  );
+}
+
+
+function MultiPipePanel() {
+  const { scheme, multiPipes, updatePipe, removeSelected } = usePid();
+  const [dn, setDn] = useState<number | "">("");
+  const [circuit, setCircuit] = useState<CircuitId | "">("");
+  const mats = [...new Set(multiPipes.map((id) => scheme.pipes.find((p) => p.id === id)?.material).filter(Boolean))] as MaterialId[];
+  const dnOpts = mats.length === 1 ? dnOptions(mats[0]!) : DN_LIST.map((d) => ({ value: d, label: `DN${d}` }));
+  const apply = () => {
+    for (const id of multiPipes) {
+      const patch: Partial<Pipe> = {};
+      if (dn !== "") patch.dn = dn as number;
+      if (circuit !== "") patch.circuit = circuit as CircuitId;
+      if (Object.keys(patch).length) updatePipe(id, patch);
+    }
+  };
+  return (
+    <div className="space-y-2 rounded-md border border-primary/50 bg-primary/5 p-3">
+      <div className="text-sm font-semibold">{multiPipes.length} conducte selectate</div>
+      <p className="text-xs text-muted-foreground">Se aplică tuturor conductelor selectate; reducțiile la joncțiuni apar automat în deviz.</p>
+      <Field label="DN comun">
+        <Sel<number | ""> value={dn} onChange={(v) => setDn(v as number | "")} options={[{ value: "" as never, label: "— nu se modifică —" }, ...dnOpts]} />
+      </Field>
+      <Field label="Tip circuit">
+        <Sel<CircuitId | ""> value={circuit} onChange={(v) => setCircuit(v as CircuitId | "")}
+          options={[{ value: "" as never, label: "— nu se modifică —" }, ...CIRCUIT_IDS.map((c) => ({ value: c, label: CIRCUITS[c].name }))]} />
+      </Field>
+      <div className="flex gap-2">
+        <Button size="sm" className="flex-1" onClick={apply}>Aplică</Button>
+        <Button size="sm" variant="destructive" onClick={removeSelected}><Trash2 className="h-4 w-4" /></Button>
+      </div>
     </div>
   );
 }

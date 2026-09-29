@@ -1,10 +1,10 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { circuitColor } from "@/lib/pid/catalog";
+import { circuitColor, innerDiameterMm } from "@/lib/pid/catalog";
 import { pipeCrossings, pipeRoute, portPos } from "@/lib/pid/hydraulics";
 import { usePid } from "@/lib/pid/store";
 import { getSymbol } from "@/lib/pid/symbols";
 import type { Pipe, PidNode, Scheme } from "@/lib/pid/types";
-import { ZoomIn, ZoomOut, Maximize, AlertTriangle } from "lucide-react";
+import { ZoomIn, ZoomOut, Maximize, AlertTriangle, Flame, Ruler, Eraser } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type Drag =
@@ -25,7 +25,9 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
   critical?: string[] | undefined;
 }) {
   const criticalSet = useMemo(() => new Set(critical ?? []), [critical]);
-  const { scheme, selected, multi, grid, select, setMulti, updateNode, moveNodes, addPipe, addNode, removeSelected, duplicateNodes, updatePipe, insertOnPipe } = usePid();
+  const { scheme, selected, multi, multiPipes, grid, select, setMulti, setMultiPipes, updateNode, moveNodes, addPipe, addNode, removeSelected, duplicateNodes, updatePipe, insertOnPipe,
+    addGuide, clearGuides, addPipeToEnd, insertNodeOnPipe, insertModule, copySelection, pasteClipboard } = usePid();
+  const [heat, setHeat] = useState(false);
   const innerRef = useRef<SVGSVGElement>(null);
   const svgRef = outerRef ?? innerRef;
   const pid = useId().replace(/:/g, "");
@@ -50,6 +52,8 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
       if (e.key === "Delete" || e.key === "Backspace") removeSelected();
       if (e.key === "Escape") { setPending(null); select(null); }
       if ((e.key === "d" || e.key === "D") && (e.ctrlKey || e.metaKey) && ids.length) { e.preventDefault(); duplicateNodes(ids); }
+      if ((e.key === "c" || e.key === "C") && (e.ctrlKey || e.metaKey) && ids.length) { e.preventDefault(); copySelection(); }
+      if ((e.key === "v" || e.key === "V") && (e.ctrlKey || e.metaKey)) { e.preventDefault(); pasteClipboard(); }
       if ((e.key === "r" || e.key === "R") && !e.ctrlKey && !e.metaKey && st.selected?.kind === "node") {
         const n = st.scheme.nodes.find((x) => x.id === st.selected!.id);
         if (n) updateNode(n.id, { rotation: (n.rotation + 90) % 360 });
@@ -64,7 +68,7 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [readOnly, removeSelected, select, updateNode, moveNodes, duplicateNodes]);
+  }, [readOnly, removeSelected, select, updateNode, moveNodes, duplicateNodes, copySelection, pasteClipboard]);
 
   useEffect(() => {
     const el = svgRef.current;
@@ -119,6 +123,11 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
         if (Math.abs(ny + offY - op.y) < 8) ny = op.y - offY;
         if (Math.abs(nx + offX - op.x) < 8) nx = op.x - offX;
       }
+      // aliniere cu liniile ajutătoare
+      for (const g of scheme.guides ?? []) {
+        if (g.dir === "v" && Math.abs(nx - g.pos) < 6) nx = g.pos;
+        if (g.dir === "h" && Math.abs(ny - g.pos) < 6) ny = g.pos;
+      }
       const dx = nx - n.x, dy = ny - n.y;
       if (!dx && !dy) return;
       if (multi.length > 1 && multi.includes(n.id)) moveNodes(multi, dx, dy);
@@ -134,17 +143,24 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
       const x1 = Math.min(d.x0, mouse.x), x2 = Math.max(d.x0, mouse.x), y1 = Math.min(d.y0, mouse.y), y2 = Math.max(d.y0, mouse.y);
       const ids = scheme.nodes.filter((n) => n.x >= x1 && n.x <= x2 && n.y >= y1 && n.y <= y2).map((n) => n.id);
       setMulti(ids);
-      usePid.setState({ selected: ids[0] ? { kind: "node", id: ids[0] } : null });
+      const pipeIds = scheme.pipes.filter((p) => {
+        if (p.direct) return false;
+        const pts = pipeRoute(p, scheme);
+        const mx = pts.reduce((a, q) => a + q.x, 0) / pts.length, my = pts.reduce((a, q) => a + q.y, 0) / pts.length;
+        return mx >= x1 && mx <= x2 && my >= y1 && my <= y2;
+      }).map((p) => p.id);
+      setMultiPipes(pipeIds);
+      usePid.setState({ selected: ids[0] ? { kind: "node", id: ids[0] } : pipeIds[0] ? { kind: "pipe", id: pipeIds[0] } : null });
     }
-    if (d.kind === "node" && moved.current) snapDirect(d.id);
+    if (d.kind === "node" && moved.current) { if (!snapDirect(d.id)) insertNodeOnPipe(d.id); }
   };
 
   /** Dacă un port liber al elementului atinge un port liber vecin, le leagă direct (fără țeavă). */
-  const snapDirect = (id: string) => {
+  const snapDirect = (id: string): boolean => {
     const st = usePid.getState();
     const s = st.scheme;
     const n = s.nodes.find((x) => x.id === id);
-    if (!n) return;
+    if (!n) return false;
     const used = new Set(s.pipes.flatMap((p) => [`${p.from.node}:${p.from.port}`, `${p.to.node}:${p.to.port}`]));
     for (const pt of getSymbol(n.type).ports) {
       if (used.has(`${n.id}:${pt.id}`)) continue;
@@ -158,10 +174,11 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
           if (!b || Math.hypot(a.x - b.x, a.y - b.y) > 12) continue;
           updateNode(n.id, { x: n.x + b.x - a.x, y: n.y + b.y - a.y });
           addPipe({ node: o.id, port: op.id }, { node: n.id, port: pt.id }, { direct: true });
-          return;
+          return true;
         }
       }
     }
+    return false;
   };
 
   const onPortClick = (e: React.PointerEvent, node: string, port: string) => {
@@ -169,7 +186,14 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
     if (readOnly) return;
     if (!pending) setPending({ node, port });
     else {
-      if (pending.node !== node || pending.port !== port) addPipe(pending, { node, port });
+      if (pending.node !== node || pending.port !== port) {
+        // tipul de circuit se preia din rolul porturilor (Tur/Retur), cu prioritate față de moștenire
+        const sym1 = getSymbol(scheme.nodes.find((n) => n.id === pending.node)?.type ?? "");
+        const sym2 = getSymbol(scheme.nodes.find((n) => n.id === node)?.type ?? "");
+        const r1 = sym1.roles?.[pending.port], r2 = sym2.roles?.[port];
+        const circuit = r1 === "s" || r2 === "s" ? "supply" : r1 === "r" || r2 === "r" ? "return" : undefined;
+        addPipe(pending, { node, port }, circuit ? { circuit } : undefined);
+      }
       setPending(null);
     }
   };
@@ -192,11 +216,17 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
           if (e.shiftKey && !readOnly) { const w = toWorld(e.clientX, e.clientY); setDrag({ kind: "box", x0: w.x, y0: w.y }); return; }
           setDrag({ kind: "pan", sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y });
         }}
-        onClick={() => { if (!moved.current) { select(null); setPending(null); } }}
+        onClick={() => {
+          if (moved.current) return;
+          if (pending && !readOnly) { addPipeToEnd(pending, mouse.x, mouse.y); setPending(null); return; }
+          select(null); setPending(null);
+        }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           e.preventDefault();
           if (readOnly) return;
+          const mod = e.dataTransfer.getData("application/pid-module");
+          if (mod) { const w = toWorld(e.clientX, e.clientY); insertModule(mod, w.x, w.y); return; }
           const t = e.dataTransfer.getData("application/pid-symbol");
           if (!t) return;
           const w = toWorld(e.clientX, e.clientY);
@@ -234,8 +264,9 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
           <g id="pid-content">
             {scheme.pipes.map((p) => (
               <PipeView key={p.id} pipe={p} scheme={scheme} crossings={crossings} showTags={showTags}
-                selected={selected?.kind === "pipe" && selected.id === p.id}
+                selected={(selected?.kind === "pipe" && selected.id === p.id) || multiPipes.includes(p.id)}
                 critical={criticalSet.has(p.id)}
+                heat={heat}
                 onSelect={() => select({ kind: "pipe", id: p.id })}
                 onSegDown={readOnly ? undefined : (e, i, pts) => {
                   e.stopPropagation();
@@ -287,12 +318,14 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
                     {!readOnly && s.ports.map((pt) => {
                       const used = usedPorts.has(`${n.id}:${pt.id}`);
                       const act = pending?.node === n.id && pending.port === pt.id;
+                      const role = s.roles?.[pt.id];
+                      const rc = role ? circuitColor(scheme, role === "s" ? "supply" : "return") : "var(--primary)";
                       return (
                         <circle key={pt.id} data-ui="1" cx={pt.x} cy={pt.y} r={act ? 5.5 : used ? 2.5 : 4}
-                          fill={act ? "var(--primary)" : used ? "var(--canvas-ink)" : "var(--canvas-bg)"}
-                          stroke="var(--primary)" strokeWidth={1.2} style={{ cursor: "crosshair" }} data-port="1"
+                          fill={act ? rc : used ? "var(--canvas-ink)" : "var(--canvas-bg)"}
+                          stroke={rc} strokeWidth={1.2} style={{ cursor: "crosshair" }} data-port="1"
                           onPointerDown={(e) => onPortClick(e, n.id, pt.id)} onClick={(e) => e.stopPropagation()}>
-                          <title>Port {pt.id} – click pentru a trasa conductă</title>
+                          <title>{role === "s" ? "Port TUR" : role === "r" ? "Port RETUR" : "Port"} {pt.id} – click pentru a trasa conductă</title>
                         </circle>
                       );
                     })}
@@ -344,6 +377,12 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
               );
             })}
           </g>
+          {(scheme.guides ?? []).map((g) => (
+            <line key={g.id} data-ui="1" pointerEvents="none"
+              x1={g.dir === "v" ? g.pos : -20000} y1={g.dir === "v" ? -20000 : g.pos}
+              x2={g.dir === "v" ? g.pos : 20000} y2={g.dir === "v" ? 20000 : g.pos}
+              stroke="var(--primary)" strokeOpacity={0.45} strokeDasharray={`${12 / view.k} ${8 / view.k}`} strokeWidth={1 / view.k} />
+          ))}
           {pendingPos && (
             <path d={`M${pendingPos.x} ${pendingPos.y} H${mouse.x} V${mouse.y}`} fill="none" stroke="var(--primary)" strokeWidth={2} strokeDasharray="6 4" pointerEvents="none" />
           )}
@@ -361,6 +400,16 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
         </div>
       )}
       <div className="absolute bottom-3 right-3 flex gap-1">
+        {!readOnly && <>
+          <Button size="icon" variant={heat ? "default" : "secondary"} title="Hartă termică a vitezelor în conducte"
+            onClick={() => setHeat((h) => !h)}><Flame className="h-4 w-4" /></Button>
+          <Button size="icon" variant="secondary" title="Linie ajutătoare orizontală la centrul zonei vizibile"
+            onClick={() => { const r = svgRef.current?.getBoundingClientRect(); addGuide("h", r ? (r.height / 2 - view.y) / view.k : -view.y / view.k); }}><Ruler className="h-4 w-4 rotate-90" /></Button>
+          <Button size="icon" variant="secondary" title="Linie ajutătoare verticală la centrul zonei vizibile"
+            onClick={() => { const r = svgRef.current?.getBoundingClientRect(); addGuide("v", r ? (r.width / 2 - view.x) / view.k : -view.x / view.k); }}><Ruler className="h-4 w-4" /></Button>
+          <Button size="icon" variant="secondary" title="Șterge toate liniile ajutătoare" disabled={!(scheme.guides ?? []).length}
+            onClick={() => clearGuides()}><Eraser className="h-4 w-4" /></Button>
+        </>}
         <Button size="icon" variant="secondary" onClick={() => setView((v) => ({ ...v, k: Math.min(4, v.k * 1.2) }))}><ZoomIn className="h-4 w-4" /></Button>
         <Button size="icon" variant="secondary" onClick={() => setView((v) => ({ ...v, k: Math.max(0.2, v.k / 1.2) }))}><ZoomOut className="h-4 w-4" /></Button>
         <Button size="icon" variant="secondary" onClick={() => setView({ x: -40, y: 80, k: 1 })}><Maximize className="h-4 w-4" /></Button>
@@ -374,14 +423,18 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
   );
 }
 
-function PipeView({ pipe, scheme, crossings, selected, onSelect, showTags, onSegDown, critical = false }: {
+function PipeView({ pipe, scheme, crossings, selected, onSelect, showTags, onSegDown, critical = false, heat = false }: {
   pipe: Pipe; scheme: Scheme; crossings: { x: number; y: number; pipeId: string }[]; selected: boolean; onSelect: () => void; showTags: boolean;
   onSegDown?: ((e: React.PointerEvent, i: number, pts: { x: number; y: number }[]) => void) | undefined;
-  critical?: boolean;
+  critical?: boolean; heat?: boolean;
 }) {
   const pts = pipeRoute(pipe, scheme);
   if (pts.length < 2) return null;
-  const color = circuitColor(scheme, pipe.circuit);
+  const di = innerDiameterMm(pipe.material, pipe.dn) / 1000;
+  const vel = di > 0 ? pipe.flow / 3600 / ((Math.PI * di * di) / 4) : 0;
+  const heatColor = !heat || pipe.direct || pipe.flow <= 0 ? undefined
+    : vel < 0.3 ? "var(--muted-foreground)" : vel <= 1.5 ? "var(--success)" : vel <= 2.5 ? "var(--warning)" : "var(--destructive)";
+  const color = heatColor ?? circuitColor(scheme, pipe.circuit);
   const w = 2 + Math.min(4, pipe.dn / 70);
 
   if (pipe.direct) {
@@ -449,6 +502,11 @@ function PipeView({ pipe, scheme, crossings, selected, onSelect, showTags, onSeg
           <text x={horiz ? mx : mx + 8} y={horiz ? my - 9 : my - 4} fontSize={10} fill={color} textAnchor={horiz ? "middle" : "start"}>
             {showTags ? `${pipe.tag} · DN${pipe.dn}` : `DN${pipe.dn}`}{pipe.disabled ? " · SCOS" : ""}
           </text>
+          {heat && pipe.flow > 0 && !pipe.direct && (
+            <text x={horiz ? mx : mx + 8} y={horiz ? my + 26 : my + 19} fontSize={8} fill={color} textAnchor={horiz ? "middle" : "start"}>
+              {vel.toFixed(2)} m/s
+            </text>
+          )}
           <text x={horiz ? mx : mx + 8} y={horiz ? my + 15 : my + 8} fontSize={8} fill="var(--canvas-ink)" opacity={0.45} textAnchor={horiz ? "middle" : "start"}>
             {pipe.length.toFixed(1)} m
           </text>

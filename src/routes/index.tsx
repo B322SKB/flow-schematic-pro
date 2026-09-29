@@ -87,6 +87,7 @@ function App() {
         <div className="ml-auto hidden flex-col items-end gap-0.5 font-mono text-[11px] text-muted-foreground xl:flex">
           <div className="flex gap-4">
             <span>{scheme.nodes.length} elemente · {scheme.pipes.length} segmente · {stats.lengthTotal.toFixed(1)} m</span>
+            <span title="Proiectul se salvează automat în acest browser la fiecare modificare">salvat {new Date(scheme.updatedAt).toLocaleTimeString("ro-RO", { hour: "2-digit", minute: "2-digit" })}</span>
             <span className="text-primary">Δp total {stats.dpTotal.toFixed(1)} kPa</span>
           </div>
           <div className="flex gap-3">

@@ -1,7 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
-  CIRCUIT_PREFIX, DEFAULT_CIRCUIT_COLORS, type CircuitId, type MaterialId, type JointType,
+  CIRCUIT_PREFIX, DEFAULT_CIRCUIT_COLORS, DN_LIST, getMaterial, innerDiameterMm,
+  type CircuitId, type MaterialId, type JointType,
 } from "./catalog";
 import { getSymbol, syncCustomSymbols, type CustomSymbol, type SymbolType } from "./symbols";
 import type { Pipe, PidNode, Scheme } from "./types";
@@ -21,7 +22,17 @@ export interface PipeDefaults {
   length: number;
 }
 
+export interface SavedModule {
+  id: string;
+  name: string;
+  nodes: PidNode[];
+  pipes: Pipe[];
+}
+
 interface State {
+  modules: SavedModule[];
+  multiPipes: string[];
+  clipboardIds: string[];
   projects: Scheme[];
   activeId: string;
   selected: { kind: "node" | "pipe"; id: string } | null;
@@ -29,6 +40,11 @@ interface State {
   grid: number; // pas grilă (px)
   setGrid: (g: number) => void;
   setMulti: (ids: string[]) => void;
+  setMultiPipes: (ids: string[]) => void;
+  copySelection: () => void;
+  pasteClipboard: () => void;
+  addGuide: (dir: "h" | "v", pos: number) => void;
+  clearGuides: () => void;
   moveNodes: (ids: string[], dx: number, dy: number) => void;
   duplicateNodes: (ids: string[]) => void;
   pipeDefaults: PipeDefaults;
@@ -36,7 +52,13 @@ interface State {
   setScheme: (p: Partial<Scheme>) => void;
   addNode: (type: SymbolType, x: number, y: number) => void;
   updateNode: (id: string, p: Partial<PidNode>) => void;
-  addPipe: (from: Pipe["from"], to: Pipe["to"], opts?: { direct?: boolean }) => void;
+  addPipe: (from: Pipe["from"], to: Pipe["to"], opts?: { direct?: boolean; circuit?: CircuitId }) => void;
+  addPipeToEnd: (from: Pipe["from"], x: number, y: number) => void;
+  insertNodeOnPipe: (nodeId: string) => boolean;
+  autoSizePipes: () => { pipes: number; valves: number };
+  saveModule: (name: string, ids: string[]) => void;
+  removeModule: (id: string) => void;
+  insertModule: (id: string, x: number, y: number) => void;
   updatePipe: (id: string, p: Partial<Pipe>) => void;
   flipPipe: (id: string) => void;
   insertOnPipe: (pipeId: string, type: SymbolType, x: number, y: number) => boolean;
@@ -214,9 +236,25 @@ export const usePid = create<State>()(
         scheme: first,
         selected: null,
         multi: [],
+        multiPipes: [],
+        clipboardIds: [],
+        modules: [],
         grid: 5,
         setGrid: (g) => set({ grid: g }),
         setMulti: (ids) => set({ multi: ids }),
+        setMultiPipes: (ids) => set({ multiPipes: ids }),
+        copySelection: () => {
+          const st = get();
+          const ids = st.multi.length ? st.multi : st.selected?.kind === "node" ? [st.selected.id] : [];
+          if (ids.length) set({ clipboardIds: ids });
+        },
+        pasteClipboard: () => {
+          const st = get();
+          if (st.clipboardIds.length) st.duplicateNodes(st.clipboardIds);
+        },
+        addGuide: (dir, pos) =>
+          patchScheme((s) => ({ ...s, guides: [...(s.guides ?? []), { id: uid(), dir, pos: Math.round(pos) }] })),
+        clearGuides: () => patchScheme((s) => ({ ...s, guides: [] })),
         moveNodes: (ids, dx, dy) => {
           const set_ = new Set(ids);
           patchScheme((s) => ({ ...s, nodes: s.nodes.map((n) => (set_.has(n.id) ? { ...n, x: n.x + dx, y: n.y + dy } : n)) }));
@@ -287,7 +325,7 @@ export const usePid = create<State>()(
             ?? ps.find((p) => p.from.node === from.node || p.to.node === to.node);
           const pipe: Pipe = {
             id: uid(), tag: "", from, to, dn: src?.dn ?? d.dn, material: src?.material ?? d.material, joint: src?.joint ?? d.joint,
-            circuit: src?.circuit ?? d.circuit, length: d.length, flow: src?.flow ?? d.flow, flowMode: "manual", routing: "auto", fittings: {},
+            circuit: opts?.circuit ?? src?.circuit ?? d.circuit, length: d.length, flow: src?.flow ?? d.flow, flowMode: "manual", routing: "auto", fittings: {},
           };
           pipe.tag = pipeTag(pipe, st.scheme.pipes.map((p) => p.tag));
           pipe.length = opts?.direct ? 0 : routeLen(pipe, st.scheme);
@@ -353,17 +391,173 @@ export const usePid = create<State>()(
           return true;
         },
 
+        addPipeToEnd: (from, x, y) => {
+          const st = get();
+          const g = st.grid;
+          const node: PidNode = {
+            id: uid(), type: "port_open", x: Math.round(x / g) * g, y: Math.round(y / g) * g, rotation: 0,
+            tag: nextTag("CP", st.scheme.nodes.map((n) => n.tag)),
+          };
+          const src = st.scheme.pipes.find((p) => !p.direct && (p.from.node === from.node || p.to.node === from.node));
+          const d = st.pipeDefaults;
+          const pipe: Pipe = {
+            id: uid(), tag: "", from, to: { node: node.id, port: "a" },
+            dn: src?.dn ?? d.dn, material: src?.material ?? d.material, joint: src?.joint ?? d.joint,
+            circuit: src?.circuit ?? d.circuit, length: d.length, flow: src?.flow ?? d.flow, flowMode: "manual",
+            routing: "auto", fittings: {},
+          };
+          pipe.tag = pipeTag(pipe, st.scheme.pipes.map((p) => p.tag));
+          pipe.length = routeLen(pipe, { ...st.scheme, nodes: [...st.scheme.nodes, node] });
+          patchScheme((s) => ({ ...s, nodes: [...s.nodes, node], pipes: [...s.pipes, pipe] }), { selected: { kind: "pipe", id: pipe.id } });
+        },
+
+        /** Inserează un element existent (cu ≥2 porturi libere aliniate) într-o conductă apropiată, tăind traseul. */
+        insertNodeOnPipe: (nodeId) => {
+          const st = get();
+          const s0 = st.scheme;
+          const n = s0.nodes.find((x) => x.id === nodeId);
+          if (!n) return false;
+          const used = new Set(s0.pipes.flatMap((p) => [`${p.from.node}:${p.from.port}`, `${p.to.node}:${p.to.port}`]));
+          const free = getSymbol(n.type).ports.filter((pt) => !used.has(`${n.id}:${pt.id}`));
+          if (free.length < 2) return false;
+          const [pa, pb] = free;
+          // porturile trebuie să fie opuse față de centru (element inline)
+          const cx = n.x, cy = n.y;
+          const va = { x: pa.x - getSymbol(n.type).w / 2, y: pa.y - getSymbol(n.type).h / 2 };
+          const vb = { x: pb.x - getSymbol(n.type).w / 2, y: pb.y - getSymbol(n.type).h / 2 };
+          if (Math.abs(va.x + vb.x) > 4 || Math.abs(va.y + vb.y) > 4) return false;
+          let best: { pipe: Pipe; d: number; x: number; y: number; i: number; t: number; dx: number; dy: number } | null = null;
+          for (const p of s0.pipes) {
+            if (p.direct) continue;
+            const pts = pipeRoute(p, s0);
+            for (let i = 1; i < pts.length; i++) {
+              const a = pts[i - 1]!, b = pts[i]!;
+              const L2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2 || 1;
+              const t = Math.max(0, Math.min(1, ((n.x - a.x) * (b.x - a.x) + (n.y - a.y) * (b.y - a.y)) / L2));
+              const px = a.x + t * (b.x - a.x), py = a.y + t * (b.y - a.y);
+              const d = Math.hypot(px - cx, py - cy);
+              if (d < 24 && (!best || d < best.d)) best = { pipe: p, d, x: px, y: py, i, t, dx: b.x - a.x, dy: b.y - a.y };
+            }
+          }
+          if (!best) return false;
+          const rotation = Math.abs(best.dx) < 1 ? (best.dy > 0 ? 90 : 270) : best.dx >= 0 ? 0 : 180;
+          let acc = 0, total = 0;
+          const segL: number[] = [];
+          const pts = pipeRoute(best.pipe, s0);
+          for (let i = 1; i < pts.length; i++) { const L = Math.hypot(pts[i]!.x - pts[i - 1]!.x, pts[i]!.y - pts[i - 1]!.y); segL.push(L); total += L; }
+          for (let i = 1; i < best.i; i++) acc += segL[i - 1]!;
+          acc += segL[best.i - 1]! * best.t;
+          const frac = total ? acc / total : 0.5;
+          const p1: Pipe = { ...best.pipe, to: { node: n.id, port: pa.id }, length: Math.round(best.pipe.length * frac * 10) / 10, points: undefined };
+          const p2: Pipe = { ...best.pipe, id: uid(), from: { node: n.id, port: pb.id }, length: Math.round(best.pipe.length * (1 - frac) * 10) / 10, fittings: {}, points: undefined };
+          p2.tag = pipeTag(p2, s0.pipes.map((p) => p.tag));
+          patchScheme((s) => ({
+            ...s,
+            nodes: s.nodes.map((x) => (x.id === n.id ? { ...x, x: best.x, y: best.y, rotation } : x)),
+            pipes: s.pipes.flatMap((p) => (p.id === best.pipe.id ? [p1, p2] : [p])),
+          }), { selected: { kind: "node", id: n.id } });
+          return true;
+        },
+
+        autoSizePipes: () => {
+          const st = get();
+          const s = st.scheme;
+          const tags = s.pipes.map((p) => p.tag);
+          let pipes = 0;
+          const dnMap = new Map<string, number>();
+          const next = s.pipes.map((p) => {
+            if (p.direct || p.flow <= 0) return p;
+            const [lo, hi] = getMaterial(p.material).dnRange;
+            const list = DN_LIST.filter((d) => d >= lo && d <= hi);
+            let chosen = list[list.length - 1]!;
+            for (const d of list) {
+              const di = innerDiameterMm(p.material, d) / 1000;
+              const v = p.flow / 3600 / ((Math.PI * di * di) / 4);
+              if (v <= 1.2) { chosen = d; break; }
+            }
+            if (chosen !== p.dn) {
+              pipes++;
+              dnMap.set(p.id, chosen);
+              const np = { ...p, dn: chosen };
+              np.tag = pipeTag(np, tags);
+              tags.push(np.tag);
+              return np;
+            }
+            return p;
+          });
+          // vanele de pe tronsoanele redimensionate preiau DN-ul nou
+          let valves = 0;
+          const nodes = s.nodes.map((n) => {
+            if (!n.dn || getSymbol(n.type).bomGroup !== "Vane") return n;
+            const rel = next.find((p) => dnMap.has(p.id) && (p.from.node === n.id || p.to.node === n.id));
+            if (!rel || rel.dn === n.dn) return n;
+            valves++;
+            return { ...n, dn: rel.dn };
+          });
+          patchScheme((s2) => ({ ...s2, pipes: next, nodes }));
+          return { pipes, valves };
+        },
+
+        saveModule: (name, ids) => {
+          const st = get();
+          const set_ = new Set(ids);
+          const nodes = st.scheme.nodes.filter((n) => set_.has(n.id)).map((n) => structuredClone(n));
+          const pipes = st.scheme.pipes.filter((p) => set_.has(p.from.node) && set_.has(p.to.node)).map((p) => structuredClone(p));
+          if (!nodes.length) return;
+          set((s) => ({ modules: [...s.modules, { id: uid(), name, nodes, pipes }] }));
+        },
+
+        removeModule: (id) => set((s) => ({ modules: s.modules.filter((m) => m.id !== id) })),
+
+        insertModule: (id, x, y) => {
+          const st = get();
+          const m = st.modules.find((mm) => mm.id === id);
+          if (!m) return;
+          const xs = m.nodes.map((n) => n.x), ys = m.nodes.map((n) => n.y);
+          const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+          const map = new Map<string, string>();
+          const tags = st.scheme.nodes.map((n) => n.tag);
+          const nodes: PidNode[] = m.nodes.map((n) => {
+            const nid = uid();
+            map.set(n.id, nid);
+            const tag = nextTag(getSymbol(n.type).prefix, tags);
+            tags.push(tag);
+            return { ...structuredClone(n), id: nid, tag, x: n.x - cx + x, y: n.y - cy + y };
+          });
+          const ptags = st.scheme.pipes.map((p) => p.tag);
+          const pipes: Pipe[] = m.pipes.map((p) => {
+            const np: Pipe = { ...structuredClone(p), id: uid(), from: { ...p.from, node: map.get(p.from.node)! }, to: { ...p.to, node: map.get(p.to.node)! } };
+            np.tag = pipeTag(np, ptags);
+            ptags.push(np.tag);
+            return np;
+          });
+          patchScheme((s) => ({ ...s, nodes: [...s.nodes, ...nodes], pipes: [...s.pipes, ...pipes] }),
+            { multi: nodes.map((n) => n.id), selected: nodes[0] ? { kind: "node", id: nodes[0].id } : null });
+        },
+
         flipPipe: (id) =>
           patchScheme((s) => ({
             ...s,
             pipes: s.pipes.map((p) => (p.id === id ? { ...p, from: p.to, to: p.from, points: p.points ? [...p.points].reverse() : undefined } : p)),
           })),
 
-        select: (s) => set((st) => ({ selected: s, multi: s?.kind === "node" && st.multi.includes(s.id) ? st.multi : [] })),
+        select: (s) => set((st) => ({ selected: s, multi: s?.kind === "node" && st.multi.includes(s.id) ? st.multi : [], multiPipes: [] })),
 
         removeSelected: () => {
-          const sel = get().selected;
-          const multi = get().multi;
+          const st = get();
+          const sel = st.selected;
+          const multi = st.multi;
+          const mp = st.multiPipes;
+          if (mp.length) {
+            const pipeIds = new Set(mp);
+            const nodeIds = new Set(multi);
+            patchScheme((s) => ({
+              ...s,
+              nodes: s.nodes.filter((n) => !nodeIds.has(n.id)),
+              pipes: s.pipes.filter((p) => !pipeIds.has(p.id) && !nodeIds.has(p.from.node) && !nodeIds.has(p.to.node)),
+            }), { selected: null, multi: [], multiPipes: [] });
+            return;
+          }
           if (multi.length > 1) {
             const ids = new Set(multi);
             patchScheme((s) => ({
@@ -503,7 +697,7 @@ export const usePid = create<State>()(
     },
     {
       name: "pid-studio-v2",
-      partialize: (s) => ({ projects: s.projects, activeId: s.activeId, pipeDefaults: s.pipeDefaults, grid: s.grid }),
+      partialize: (s) => ({ projects: s.projects, activeId: s.activeId, pipeDefaults: s.pipeDefaults, grid: s.grid, modules: s.modules }),
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<State>;
         const projects = p.projects?.length ? p.projects : current.projects;

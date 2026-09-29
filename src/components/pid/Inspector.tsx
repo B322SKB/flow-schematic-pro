@@ -380,10 +380,10 @@ function MultiPipePanel() {
       <div className="text-sm font-semibold">{multiPipes.length} conducte selectate</div>
       <p className="text-xs text-muted-foreground">Se aplică tuturor conductelor selectate; reducțiile la joncțiuni apar automat în deviz.</p>
       <Field label="DN comun">
-        <Sel value={dn === "" ? undefined : dn} onChange={(v) => setDn(v)} options={[{ value: "" as never, label: "— nu se modifică —" }, ...dnOpts]} />
+        <Sel<number | ""> value={dn} onChange={(v) => setDn(v as number | "")} options={[{ value: "" as never, label: "— nu se modifică —" }, ...dnOpts]} />
       </Field>
       <Field label="Tip circuit">
-        <Sel value={circuit === "" ? undefined : circuit} onChange={(v) => setCircuit(v)}
+        <Sel<CircuitId | ""> value={circuit} onChange={(v) => setCircuit(v as CircuitId | "")}
           options={[{ value: "" as never, label: "— nu se modifică —" }, ...CIRCUIT_IDS.map((c) => ({ value: c, label: CIRCUITS[c].name }))]} />
       </Field>
       <div className="flex gap-2">

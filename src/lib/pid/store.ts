@@ -420,7 +420,7 @@ export const usePid = create<State>()(
           const used = new Set(s0.pipes.flatMap((p) => [`${p.from.node}:${p.from.port}`, `${p.to.node}:${p.to.port}`]));
           const free = getSymbol(n.type).ports.filter((pt) => !used.has(`${n.id}:${pt.id}`));
           if (free.length < 2) return false;
-          const [pa, pb] = free;
+          const pa = free[0]!, pb = free[1]!;
           // porturile trebuie să fie opuse față de centru (element inline)
           const cx = n.x, cy = n.y;
           const va = { x: pa.x - getSymbol(n.type).w / 2, y: pa.y - getSymbol(n.type).h / 2 };

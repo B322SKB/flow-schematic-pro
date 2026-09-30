@@ -355,7 +355,7 @@ function DnAdvisor({ flow, material, dn, onPick }: { flow: number; material: Mat
           </button>
         ))}
       </div>
-      <p className="mt-2 text-[10px] text-muted-foreground">★ = cel mai mic DN cu viteză în limite și R ≤ 300 Pa/m. Click pentru a aplica.</p>
+      <p className="mt-2 text-[10px] text-muted-foreground">★ = cel mai mic DN cu viteză în limite și R ≤ {scheme.maxR ?? 150} Pa/m. Click pentru a aplica.</p>
     </div>
   );
 }

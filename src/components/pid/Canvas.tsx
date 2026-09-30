@@ -1,6 +1,7 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { circuitColor, innerDiameterMm } from "@/lib/pid/catalog";
-import { pipeCrossings, pipeRoute, portPos } from "@/lib/pid/hydraulics";
+import { computePipe, fmtP, pipeCrossings, pipeRoute, portPos, velocityLimits } from "@/lib/pid/hydraulics";
+import { fluidProps } from "@/lib/pid/fluids";
 import { usePid } from "@/lib/pid/store";
 import { getSymbol } from "@/lib/pid/symbols";
 import type { Pipe, PidNode, Scheme } from "@/lib/pid/types";
@@ -9,7 +10,7 @@ import { Button } from "@/components/ui/button";
 
 type Drag =
   | { kind: "pan"; sx: number; sy: number; vx: number; vy: number }
-  | { kind: "node"; id: string; ox: number; oy: number }
+  | { kind: "node"; id: string; ox: number; oy: number; sx: number; sy: number }
   | { kind: "box"; x0: number; y0: number }
   | { kind: "seg"; pipeId: string; i: number; pts: { x: number; y: number }[]; horiz: boolean; x0: number; y0: number }
   | { kind: "code"; id: string; x0: number; y0: number; dx0: number; dy0: number }
@@ -20,12 +21,12 @@ export function nodeDn(n: PidNode, scheme: Scheme) {
   return n.dn ?? scheme.pipes.find((p) => p.from.node === n.id || p.to.node === n.id)?.dn;
 }
 
-export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false, hideCodes = false, critical }: {
+export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false, hideCodes = false, critical, focus }: {
   svgRef?: React.RefObject<SVGSVGElement | null>; readOnly?: boolean; showTags?: boolean; hideCodes?: boolean;
-  critical?: string[] | undefined;
+  critical?: string[] | undefined; focus?: string | null | undefined;
 }) {
   const criticalSet = useMemo(() => new Set(critical ?? []), [critical]);
-  const { scheme, selected, multi, multiPipes, grid, select, setMulti, setMultiPipes, updateNode, moveNodes, addPipe, addNode, removeSelected, duplicateNodes, updatePipe, insertOnPipe,
+  const { scheme, selected, multi, multiPipes, grid, cad, setCad, select, setMulti, setMultiPipes, updateNode, moveNodes, addPipe, addNode, removeSelected, duplicateNodes, updatePipe, insertOnPipe,
     addGuide, clearGuides, addPipeToEnd, insertNodeOnPipe, insertModule, copySelection, pasteClipboard } = usePid();
   const [heat, setHeat] = useState(false);
   const innerRef = useRef<SVGSVGElement>(null);
@@ -35,7 +36,39 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
   const [drag, setDrag] = useState<Drag>(null);
   const [pending, setPending] = useState<{ node: string; port: string } | null>(null);
   const [mouse, setMouse] = useState({ x: 0, y: 0 });
+  const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const moved = useRef(false);
+
+  /** Încadrează întreg desenul în ecran (Zoom Extents). */
+  const zoomExtents = useCallback((ids?: string[]) => {
+    const el = svgRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const pts: { x: number; y: number }[] = [];
+    const st = usePid.getState().scheme;
+    const wanted = ids && ids.length ? new Set(ids) : null;
+    if (wanted) {
+      for (const p of st.pipes) if (wanted.has(p.id)) pts.push(...pipeRoute(p, st));
+    } else {
+      for (const n of st.nodes) {
+        const s = getSymbol(n.type);
+        pts.push({ x: n.x - s.w, y: n.y - s.h }, { x: n.x + s.w, y: n.y + s.h });
+      }
+      for (const p of st.pipes) pts.push(...pipeRoute(p, st));
+    }
+    if (!pts.length) { setView({ x: -40, y: 80, k: 1 }); return; }
+    const x1 = Math.min(...pts.map((p) => p.x)), x2 = Math.max(...pts.map((p) => p.x));
+    const y1 = Math.min(...pts.map((p) => p.y)), y2 = Math.max(...pts.map((p) => p.y));
+    const pad = wanted ? 160 : 60;
+    const k = Math.min(4, Math.max(0.15, Math.min((r.width - pad) / Math.max(40, x2 - x1), (r.height - pad) / Math.max(40, y2 - y1))));
+    setView({ k, x: r.width / 2 - ((x1 + x2) / 2) * k, y: r.height / 2 - ((y1 + y2) / 2) * k });
+  }, [svgRef]);
+
+  // click pe un rând din tabelul hidraulic → conducta este adusă în centrul ecranului
+  useEffect(() => {
+    if (!focus) return;
+    zoomExtents([focus]);
+  }, [focus, zoomExtents]);
 
   const toWorld = (cx: number, cy: number) => {
     const r = svgRef.current!.getBoundingClientRect();
@@ -58,6 +91,11 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
         const n = st.scheme.nodes.find((x) => x.id === st.selected!.id);
         if (n) updateNode(n.id, { rotation: (n.rotation + 90) % 360 });
       }
+      // comutatoare stil CAD
+      if (e.key === "F8") { e.preventDefault(); setCad({ ortho: !st.cad.ortho }); }
+      if (e.key === "F3") { e.preventDefault(); setCad({ osnap: !st.cad.osnap }); }
+      if (e.key === "F7") { e.preventDefault(); setCad({ showGrid: !st.cad.showGrid }); }
+      if ((e.key === "e" || e.key === "E") && !e.ctrlKey && !e.metaKey && !ids.length) { e.preventDefault(); zoomExtents(); }
       const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
       const a = arrows[e.key];
       if (a && ids.length) {
@@ -68,7 +106,7 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [readOnly, removeSelected, select, updateNode, moveNodes, duplicateNodes, copySelection, pasteClipboard]);
+  }, [readOnly, removeSelected, select, updateNode, moveNodes, duplicateNodes, copySelection, pasteClipboard, setCad, zoomExtents]);
 
   useEffect(() => {
     const el = svgRef.current;
@@ -91,6 +129,8 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
   const onMove = (e: React.PointerEvent) => {
     const w = toWorld(e.clientX, e.clientY);
     setMouse(w);
+    const r = svgRef.current?.getBoundingClientRect();
+    if (r) setCursor({ x: e.clientX - r.left, y: e.clientY - r.top });
     if (!drag) return;
     moved.current = true;
     if (drag.kind === "pan") setView((v) => ({ ...v, x: drag.vx + e.clientX - drag.sx, y: drag.vy + e.clientY - drag.sy }));
@@ -111,22 +151,29 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
       if (!n) return;
       let nx = Math.round((w.x - drag.ox) / grid) * grid;
       let ny = Math.round((w.y - drag.oy) / grid) * grid;
-      // aliniere magnetică cu porturile conectate → trasee drepte, fără coturi inutile
-      for (const p of scheme.pipes) {
-        const mine = p.from.node === n.id ? p.from : p.to.node === n.id ? p.to : null;
-        if (!mine) continue;
-        const other = mine === p.from ? p.to : p.from;
-        if (other.node === n.id) continue;
-        const mp = portPos(scheme, n.id, mine.port), op = portPos(scheme, other.node, other.port);
-        if (!mp || !op) continue;
-        const offX = mp.x - n.x, offY = mp.y - n.y;
-        if (Math.abs(ny + offY - op.y) < 8) ny = op.y - offY;
-        if (Math.abs(nx + offX - op.x) < 8) nx = op.x - offX;
+      // ORTHO: deplasarea rămâne pe o singură axă față de punctul de start
+      if (cad.ortho) {
+        const mx = Math.abs(w.x - drag.sx), my = Math.abs(w.y - drag.sy);
+        if (mx >= my) ny = n.y; else nx = n.x;
       }
-      // aliniere cu liniile ajutătoare
-      for (const g of scheme.guides ?? []) {
-        if (g.dir === "v" && Math.abs(nx - g.pos) < 6) nx = g.pos;
-        if (g.dir === "h" && Math.abs(ny - g.pos) < 6) ny = g.pos;
+      if (cad.osnap) {
+        // aliniere magnetică cu porturile conectate → trasee drepte, fără coturi inutile
+        for (const p of scheme.pipes) {
+          const mine = p.from.node === n.id ? p.from : p.to.node === n.id ? p.to : null;
+          if (!mine) continue;
+          const other = mine === p.from ? p.to : p.from;
+          if (other.node === n.id) continue;
+          const mp = portPos(scheme, n.id, mine.port), op = portPos(scheme, other.node, other.port);
+          if (!mp || !op) continue;
+          const offX = mp.x - n.x, offY = mp.y - n.y;
+          if (Math.abs(ny + offY - op.y) < 8) ny = op.y - offY;
+          if (Math.abs(nx + offX - op.x) < 8) nx = op.x - offX;
+        }
+        // aliniere cu liniile ajutătoare
+        for (const g of scheme.guides ?? []) {
+          if (g.dir === "v" && Math.abs(nx - g.pos) < 6) nx = g.pos;
+          if (g.dir === "h" && Math.abs(ny - g.pos) < 6) ny = g.pos;
+        }
       }
       const dx = nx - n.x, dy = ny - n.y;
       if (!dx && !dy) return;
@@ -141,13 +188,23 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
     if (!d) return;
     if (d.kind === "box" && moved.current) {
       const x1 = Math.min(d.x0, mouse.x), x2 = Math.max(d.x0, mouse.x), y1 = Math.min(d.y0, mouse.y), y2 = Math.max(d.y0, mouse.y);
-      const ids = scheme.nodes.filter((n) => n.x >= x1 && n.x <= x2 && n.y >= y1 && n.y <= y2).map((n) => n.id);
+      // dreapta → stânga = fereastră „crossing" (prinde tot ce atinge caseta)
+      const crossing = mouse.x < d.x0;
+      const inBox = (x: number, y: number) => x >= x1 && x <= x2 && y >= y1 && y <= y2;
+      const ids = scheme.nodes.filter((n) => {
+        const s = getSymbol(n.type);
+        if (crossing) {
+          return !(n.x + s.w / 2 < x1 || n.x - s.w / 2 > x2 || n.y + s.h / 2 < y1 || n.y - s.h / 2 > y2);
+        }
+        return inBox(n.x - s.w / 2, n.y - s.h / 2) && inBox(n.x + s.w / 2, n.y + s.h / 2);
+      }).map((n) => n.id);
       setMulti(ids);
       const pipeIds = scheme.pipes.filter((p) => {
         if (p.direct) return false;
         const pts = pipeRoute(p, scheme);
-        const mx = pts.reduce((a, q) => a + q.x, 0) / pts.length, my = pts.reduce((a, q) => a + q.y, 0) / pts.length;
-        return mx >= x1 && mx <= x2 && my >= y1 && my <= y2;
+        if (!pts.length) return false;
+        if (crossing) return pts.some((q) => inBox(q.x, q.y)) || pts.every((q) => q.x >= x1 && q.x <= x2) || pts.every((q) => q.y >= y1 && q.y <= y2);
+        return pts.every((q) => inBox(q.x, q.y));
       }).map((p) => p.id);
       setMultiPipes(pipeIds);
       usePid.setState({ selected: ids[0] ? { kind: "node", id: ids[0] } : pipeIds[0] ? { kind: "pipe", id: pipeIds[0] } : null });
@@ -207,13 +264,21 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
       <svg
         ref={svgRef}
         className="h-full w-full select-none"
-        style={{ color: "var(--canvas-ink)", cursor: drag?.kind === "pan" ? "grabbing" : pending ? "crosshair" : "default" }}
+        style={{ color: "var(--canvas-ink)", cursor: drag?.kind === "pan" ? "grabbing" : readOnly ? "default" : "crosshair" }}
         onPointerMove={onMove}
         onPointerUp={onUp}
-        onPointerLeave={onUp}
+        onPointerLeave={() => { onUp(); setCursor(null); }}
+        onAuxClick={(e) => { if (e.button === 1) e.preventDefault(); }}
         onPointerDown={(e) => {
           moved.current = false;
-          if (e.shiftKey && !readOnly) { const w = toWorld(e.clientX, e.clientY); setDrag({ kind: "box", x0: w.x, y0: w.y }); return; }
+          // rotița mouse-ului = pan de oriunde; dublu-click pe rotiță = Zoom Extents
+          if (e.button === 1) {
+            e.preventDefault();
+            if (e.detail >= 2) { zoomExtents(); return; }
+            setDrag({ kind: "pan", sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y });
+            return;
+          }
+          if (e.button === 0 && !readOnly) { const w = toWorld(e.clientX, e.clientY); setDrag({ kind: "box", x0: w.x, y0: w.y }); return; }
           setDrag({ kind: "pan", sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y });
         }}
         onClick={() => {
@@ -259,7 +324,7 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
             <path d={`M ${100 * view.k} 0 L 0 0 0 ${100 * view.k}`} fill="none" stroke="var(--canvas-grid)" strokeWidth={1.2} />
           </pattern>
         </defs>
-        <rect width="100%" height="100%" fill={`url(#${pid}l)`} />
+        {cad.showGrid !== false && <rect width="100%" height="100%" fill={`url(#${pid}l)`} />}
         <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
           <g id="pid-content">
             {scheme.pipes.map((p) => (
@@ -302,7 +367,7 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
                         return;
                       }
                       select({ kind: "node", id: n.id });
-                      setDrag({ kind: "node", id: n.id, ox: w.x - n.x, oy: w.y - n.y });
+                      setDrag({ kind: "node", id: n.id, ox: w.x - n.x, oy: w.y - n.y, sx: w.x, sy: w.y });
                     }}
                     onClick={(e) => e.stopPropagation()}
                   >
@@ -388,18 +453,28 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
           )}
           {drag?.kind === "box" && (
             <rect x={Math.min(drag.x0, mouse.x)} y={Math.min(drag.y0, mouse.y)} width={Math.abs(mouse.x - drag.x0)} height={Math.abs(mouse.y - drag.y0)}
-              fill="var(--primary)" fillOpacity={0.08} stroke="var(--primary)" strokeDasharray="4 3" pointerEvents="none" />
+              fill={mouse.x < drag.x0 ? "#22c55e" : "#3b82f6"} fillOpacity={0.12}
+              stroke={mouse.x < drag.x0 ? "#22c55e" : "#3b82f6"} strokeDasharray={mouse.x < drag.x0 ? "5 4" : ""} strokeWidth={1 / view.k} pointerEvents="none" />
           )}
         </g>
+        {/* cursor crosshair cu pickbox, ca într-un mediu CAD */}
+        {!readOnly && cursor && !drag && (
+          <g pointerEvents="none" stroke="var(--primary)" strokeOpacity={0.45} strokeWidth={0.8}>
+            <line x1={0} y1={cursor.y} x2="100%" y2={cursor.y} />
+            <line x1={cursor.x} y1={0} x2={cursor.x} y2="100%" />
+            <rect x={cursor.x - 5} y={cursor.y - 5} width={10} height={10} fill="none" strokeOpacity={0.9} />
+          </g>
+        )}
       </svg>
-      {!readOnly && (
-        <div className="absolute bottom-3 left-3 max-w-[70%] rounded-md border bg-card/90 px-3 py-1.5 font-mono text-[11px] text-muted-foreground backdrop-blur">
-          {pending ? "Click pe un alt port pentru a finaliza conducta · Esc anulează"
-            : multi.length > 1 ? `${multi.length} elemente selectate · trage pentru mutare · Ctrl+D duplică · săgeți = mutare fină · Del șterge`
-            : "Port → port = conductă · apropie porturile = legătură directă · Shift+trage = selecție grup · Ctrl+D duplică · săgeți = mutare fină · R rotire"}
-        </div>
-      )}
-      <div className="absolute bottom-3 right-3 flex gap-1">
+      <div className="absolute right-3 top-3 flex flex-col items-end gap-2">
+        {!readOnly && scheme.nodes.some((n) => { const s = getSymbol(n.type); return s.ports.length > 1 && !scheme.pipes.some((p) => p.from.node === n.id || p.to.node === n.id); }) && (
+          <div className="flex items-center gap-1.5 rounded-md border border-destructive/50 bg-destructive/10 px-2 py-1 text-[11px] text-destructive backdrop-blur">
+            <AlertTriangle className="h-3.5 w-3.5" /> Există elemente neconectate
+          </div>
+        )}
+        {selected?.kind === "pipe" && <PipeHud pipeId={selected.id} scheme={scheme} />}
+      </div>
+      <div className="absolute bottom-10 right-3 flex gap-1">
         {!readOnly && <>
           <Button size="icon" variant={heat ? "default" : "secondary"} title="Hartă termică a vitezelor în conducte"
             onClick={() => setHeat((h) => !h)}><Flame className="h-4 w-4" /></Button>
@@ -410,15 +485,61 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
           <Button size="icon" variant="secondary" title="Șterge toate liniile ajutătoare" disabled={!(scheme.guides ?? []).length}
             onClick={() => clearGuides()}><Eraser className="h-4 w-4" /></Button>
         </>}
-        <Button size="icon" variant="secondary" onClick={() => setView((v) => ({ ...v, k: Math.min(4, v.k * 1.2) }))}><ZoomIn className="h-4 w-4" /></Button>
-        <Button size="icon" variant="secondary" onClick={() => setView((v) => ({ ...v, k: Math.max(0.2, v.k / 1.2) }))}><ZoomOut className="h-4 w-4" /></Button>
-        <Button size="icon" variant="secondary" onClick={() => setView({ x: -40, y: 80, k: 1 })}><Maximize className="h-4 w-4" /></Button>
+        <Button size="icon" variant="secondary" title="Apropie" onClick={() => setView((v) => ({ ...v, k: Math.min(4, v.k * 1.2) }))}><ZoomIn className="h-4 w-4" /></Button>
+        <Button size="icon" variant="secondary" title="Depărtează" onClick={() => setView((v) => ({ ...v, k: Math.max(0.2, v.k / 1.2) }))}><ZoomOut className="h-4 w-4" /></Button>
+        <Button size="icon" variant="secondary" title="Încadrează tot desenul (E · dublu-click pe rotiță)" onClick={() => zoomExtents()}><Maximize className="h-4 w-4" /></Button>
       </div>
-      {!readOnly && scheme.nodes.some((n) => { const s = getSymbol(n.type); return s.ports.length > 1 && !scheme.pipes.some((p) => p.from.node === n.id || p.to.node === n.id); }) && (
-        <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-md border border-destructive/50 bg-destructive/10 px-2 py-1 text-[11px] text-destructive backdrop-blur">
-          <AlertTriangle className="h-3.5 w-3.5" /> Există elemente neconectate
+      {/* bară de stare stil CAD */}
+      {!readOnly && (
+        <div className="absolute inset-x-0 bottom-0 flex items-center gap-1 border-t bg-card/95 px-2 py-1 font-mono text-[11px] text-muted-foreground backdrop-blur">
+          <span className="whitespace-nowrap tabular-nums">{(mouse.x / 40).toFixed(2)}, {(mouse.y / 40).toFixed(2)} m</span>
+          <span className="opacity-40">|</span>
+          <span className="tabular-nums">{Math.round(view.k * 100)}%</span>
+          <span className="opacity-40">|</span>
+          {([["ortho", "ORTHO", "F8"], ["osnap", "OSNAP", "F3"], ["showGrid", "GRID", "F7"]] as const).map(([key, label, k]) => (
+            <button key={key} type="button" title={`${label} (${k})`}
+              onClick={() => setCad({ [key]: !cad[key] })}
+              className={`rounded px-1.5 py-0.5 text-[10px] tracking-wide ${cad[key] ? "bg-primary/20 text-primary" : "hover:bg-muted"}`}>
+              {label}
+            </button>
+          ))}
+          <span className="ml-auto truncate pl-2">
+            {pending ? "Click pe un alt port pentru a finaliza conducta · Esc anulează"
+              : multi.length > 1 ? `${multi.length} elemente selectate · trage pentru mutare · Ctrl+D duplică · Del șterge`
+              : "Trage pe fundal = selecție (→ fereastră, ← crossing) · rotiță = pan · dublu-click rotiță = încadrare"}
+          </span>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Fișa de calcul hidraulic a conductei selectate, afișată direct pe desen. */
+function PipeHud({ pipeId, scheme }: { pipeId: string; scheme: Scheme }) {
+  const pipe = scheme.pipes.find((p) => p.id === pipeId);
+  if (!pipe || pipe.direct) return null;
+  const f = fluidProps(scheme.fluid, scheme.concentration, scheme.temperature);
+  const r = computePipe(pipe, scheme, f);
+  const [lo, hi] = velocityLimits(pipe.dn, scheme);
+  const bad = !!r.velWarn;
+  return (
+    <div className="w-60 rounded-md border bg-card/95 p-2.5 text-[11px] shadow-lg backdrop-blur">
+      <div className="mb-1.5 flex items-center justify-between font-medium text-foreground">
+        <span>{pipe.tag || "Conductă"} · DN{pipe.dn}</span>
+        <span className="text-muted-foreground">{r.L.toFixed(1)} m</span>
+      </div>
+      <dl className="grid grid-cols-2 gap-x-2 gap-y-0.5 font-mono tabular-nums">
+        <dt className="text-muted-foreground">Debit</dt><dd className="text-right">{pipe.flow.toFixed(2)} m³/h</dd>
+        <dt className="text-muted-foreground">Viteză</dt><dd className={`text-right ${bad ? "font-medium text-destructive" : ""}`}>{r.v.toFixed(2)} m/s</dd>
+        <dt className="text-muted-foreground">Recomandat</dt><dd className="text-right text-muted-foreground">{lo.toFixed(1)}–{hi.toFixed(1)}</dd>
+        <dt className="text-muted-foreground">R</dt><dd className="text-right">{r.R.toFixed(0)} Pa/m</dd>
+        <dt className="text-muted-foreground">Δp liniar</dt><dd className="text-right">{fmtP(r.dpLin, "kPa")} kPa</dd>
+        <dt className="text-muted-foreground">Δp local</dt><dd className="text-right">{fmtP(r.dpLoc + r.dpComp, "kPa")} kPa</dd>
+        <dt className="text-muted-foreground">Δp total</dt><dd className="text-right font-medium text-foreground">{fmtP(r.dpTotal, "kPa")} kPa</dd>
+        {!!pipe.kw && <><dt className="text-muted-foreground">Putere</dt><dd className="text-right">{pipe.kw.toFixed(1)} kW</dd></>}
+        <dt className="text-muted-foreground">Fluid</dt><dd className="text-right">ρ {f.rho.toFixed(0)} kg/m³</dd>
+      </dl>
+      {bad && <div className="mt-1.5 text-destructive">Viteză {r.velWarn === "low" ? "sub" : "peste"} intervalul recomandat pentru DN{pipe.dn}.</div>}
     </div>
   );
 }

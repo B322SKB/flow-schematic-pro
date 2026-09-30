@@ -26,15 +26,17 @@ export interface FlowInfo {
 
 /**
  * Legea I a lui Kirchhoff, independent de sensul în care au fost trasate conductele.
- * Echipamentele consumatoare și sursele sunt „capete de sarcină": parcurgerea se
- * oprește la ele, deci tur și retur nu se scurtcircuitează prin interiorul unui CCU.
- * Pentru fiecare tronson se compară cele două capete: partea fără sursă dă consumul
- * transportat. Dacă există o cale paralelă reală (inel), debitul rămâne manual.
+ * Propagarea se face SEPARAT pe fiecare circuit (tur, retur, agent termic…): altfel
+ * un rezervor tampon sau un schimbător, care are porturi pe ambele circuite, ar
+ * închide artificial o buclă între tur și retur și niciun debit nu ar mai putea fi dedus.
+ * Echipamentele consumatoare și sursele sunt „capete de sarcină": parcurgerea se oprește
+ * la ele. Pentru fiecare tronson se compară cele două capete: partea fără sursă dă
+ * consumul transportat. Dacă există o cale paralelă reală (inel), debitul rămâne manual.
  */
 export function propagateFlows(scheme: Scheme, fp: FluidProps): Map<string, FlowInfo> {
   const out = new Map<string, FlowInfo>();
-  const pipes = scheme.pipes.filter((p) => !p.disabled);
-  if (!pipes.length) return out;
+  const all = scheme.pipes.filter((p) => !p.disabled);
+  if (!all.length) return out;
 
   const demand = new Map<string, number>();
   const isSource = new Set<string>(); // surse active (cele redundante nu debitează)
@@ -51,69 +53,87 @@ export function propagateFlows(scheme: Scheme, fp: FluidProps): Map<string, Flow
   }
   if (!isSource.size) for (const id of anySource) isSource.add(id);
   if (!isSource.size) {
-    for (const p of pipes) out.set(p.id, { flow: 0, ambiguous: true, reason: "nicio sursă (chiller) în schemă" });
+    for (const p of all) out.set(p.id, { flow: 0, ambiguous: true, reason: "nicio sursă (chiller) în schemă" });
     return out;
   }
 
-
-
-
-  const adj = new Map<string, typeof pipes>();
-  for (const p of pipes) {
-    for (const id of [p.from.node, p.to.node]) {
-      const list = adj.get(id) ?? [];
-      list.push(p);
-      adj.set(id, list);
-    }
+  // grupare pe circuite: tur și retur se rezolvă independent
+  const groups = new Map<string, typeof all>();
+  for (const p of all) {
+    const g = groups.get(p.circuit) ?? [];
+    g.push(p);
+    groups.set(p.circuit, g);
   }
 
-  /** Nodurile atinse dinspre `start`, fără tronsonul `skip`, oprind la echipamente/surse. */
-  const reach = (start: string, skip: string) => {
-    const seen = new Set<string>([start]);
-    const q: string[] = [];
-    if (!blocked.has(start)) q.push(start);
-    while (q.length) {
-      const id = q.shift()!;
-      for (const p of adj.get(id) ?? []) {
-        if (p.id === skip) continue;
-        const nb = p.from.node === id ? p.to.node : p.from.node;
-        if (seen.has(nb)) continue;
-        seen.add(nb);
-        if (!blocked.has(nb)) q.push(nb);
+  for (const pipes of groups.values()) {
+    const adj = new Map<string, typeof pipes>();
+    for (const p of pipes) {
+      for (const id of [p.from.node, p.to.node]) {
+        const list = adj.get(id) ?? [];
+        list.push(p);
+        adj.set(id, list);
       }
     }
-    return seen;
-  };
-  const sum = (ids: Set<string>) => {
-    let f = 0;
-    for (const id of ids) f += demand.get(id) ?? 0;
-    return f;
-  };
-  /** Sursele accesibile exclusiv dintr-un capăt (buclele închise ating aceeași sursă din ambele capete). */
-  const exclusiveSource = (x: Set<string>, y: Set<string>) =>
-    [...x].some((id) => isSource.has(id) && !y.has(id));
 
-  for (const p of pipes) {
-    const a = reach(p.from.node, p.id);
-    if (!blocked.has(p.to.node) && a.has(p.to.node)) {
-      out.set(p.id, { flow: 0, ambiguous: true, reason: "tronson de inel (cale paralelă)" });
-      continue;
+    // rădăcinile grupului: sursele proprii sau, în lipsa lor, colectoarele/distribuitoarele
+    const inGroup = new Set(adj.keys());
+    const roots = new Set<string>([...inGroup].filter((id) => isSource.has(id)));
+    if (!roots.size) {
+      // circuit secundar fără chiller: rădăcina este nodul de legătură cu restul instalației
+      for (const id of inGroup) {
+        const other = all.some((p) => p.circuit !== pipes[0]!.circuit && (p.from.node === id || p.to.node === id));
+        if (other && !blocked.has(id)) roots.add(id);
+      }
     }
-    const b = reach(p.to.node, p.id);
-    const sa = exclusiveSource(a, b), sb = exclusiveSource(b, a);
-    const da = sum(a), db = sum(b);
-    let f = 0;
-    let reason: string | undefined;
-    if (sa && !sb) f = db;
-    else if (sb && !sa) f = da;
-    else if (da > 0 && db === 0) f = da;
-    else if (db > 0 && da === 0) f = db;
-    else if (da === 0 && db === 0) f = 0;
-    else {
-      out.set(p.id, { flow: 0, ambiguous: true, reason: "repartiție neunivocă (buclă)" });
-      continue;
+    if (!roots.size) {
+      for (const id of inGroup) if ((adj.get(id)?.length ?? 0) >= 3) roots.add(id);
     }
-    out.set(p.id, { flow: Math.round(f * 100) / 100, ambiguous: false, reason });
+
+    /** Nodurile atinse dinspre `start`, fără tronsonul `skip`, oprind la echipamente/surse. */
+    const reach = (start: string, skip: string) => {
+      const seen = new Set<string>([start]);
+      const q: string[] = [];
+      if (!blocked.has(start)) q.push(start);
+      while (q.length) {
+        const id = q.shift()!;
+        for (const p of adj.get(id) ?? []) {
+          if (p.id === skip) continue;
+          const nb = p.from.node === id ? p.to.node : p.from.node;
+          if (seen.has(nb)) continue;
+          seen.add(nb);
+          if (!blocked.has(nb)) q.push(nb);
+        }
+      }
+      return seen;
+    };
+    const sum = (ids: Set<string>) => {
+      let f = 0;
+      for (const id of ids) f += demand.get(id) ?? 0;
+      return f;
+    };
+    const exclusiveRoot = (x: Set<string>, y: Set<string>) => [...x].some((id) => roots.has(id) && !y.has(id));
+
+    for (const p of pipes) {
+      const a = reach(p.from.node, p.id);
+      if (!blocked.has(p.to.node) && a.has(p.to.node)) {
+        out.set(p.id, { flow: 0, ambiguous: true, reason: "tronson de inel (cale paralelă)" });
+        continue;
+      }
+      const b = reach(p.to.node, p.id);
+      const ra = exclusiveRoot(a, b), rb = exclusiveRoot(b, a);
+      const da = sum(a), db = sum(b);
+      let f = 0;
+      if (ra && !rb) f = db;
+      else if (rb && !ra) f = da;
+      else if (da > 0 && db === 0) f = da;
+      else if (db > 0 && da === 0) f = db;
+      else if (da === 0 && db === 0) f = 0;
+      else {
+        out.set(p.id, { flow: 0, ambiguous: true, reason: "repartiție neunivocă (buclă)" });
+        continue;
+      }
+      out.set(p.id, { flow: Math.round(f * 100) / 100, ambiguous: false });
+    }
   }
 
   return out;

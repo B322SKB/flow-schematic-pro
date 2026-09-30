@@ -336,8 +336,8 @@ function DnAdvisor({ flow, material, dn, onPick }: { flow: number; material: Mat
     const Re = (v * di) / fp.nu;
     const f = colebrook(Re, m.roughness / 1000 / di);
     const R = (f / di) * (fp.rho * v * v) / 2;
-    const [lo, hi] = velocityLimits(d);
-    return { d, label, v, R, ok: v >= lo && v <= hi && R <= 300 };
+    const [lo, hi] = velocityLimits(d, scheme);
+    return { d, label, v, R, ok: v >= lo && v <= hi && R <= (scheme.maxR ?? 150) };
   });
   const rec = rows.find((r) => r.ok) ?? rows.find((r) => r.R <= 300);
   const show = rows.filter((r) => r.v <= 4 && r.v >= 0.15);
@@ -355,7 +355,7 @@ function DnAdvisor({ flow, material, dn, onPick }: { flow: number; material: Mat
           </button>
         ))}
       </div>
-      <p className="mt-2 text-[10px] text-muted-foreground">★ = cel mai mic DN cu viteză în limite și R ≤ 300 Pa/m. Click pentru a aplica.</p>
+      <p className="mt-2 text-[10px] text-muted-foreground">★ = cel mai mic DN cu viteză în limite și R ≤ {scheme.maxR ?? 150} Pa/m. Click pentru a aplica.</p>
     </div>
   );
 }

@@ -43,6 +43,9 @@ export function volumeTotals(scheme: Scheme): VolumeTotals {
   };
 }
 
+/** Volume nominale comerciale uzuale pentru vase de expansiune cu membrană [litri]. */
+export const STANDARD_TANKS = [8, 12, 18, 25, 35, 50, 80, 100, 150, 200, 250, 300, 400, 500, 600, 800, 1000, 1500, 2000];
+
 export interface ExpansionSizing {
   tMin: number;
   tMax: number;
@@ -50,37 +53,46 @@ export interface ExpansionSizing {
   expansionVolume: number; // litri de dilatare
   reserve: number; // litri rezervă de apă (min. 0,5% sau 3 l)
   utilVolume: number; // litri utili necesari
-  nominal: number; // litri volum nominal recomandat
+  nominal: number; // litri volum nominal calculat
+  standard: number; // litri, mărimea comercială aleasă
+  staticHeight: number; // m coloană de fluid
   p0: number; // bar abs, presiune de preîncărcare
   pe: number; // bar abs, presiune finală
+  relief: number; // bar suprapresiune, supapa de siguranță
+  efficiency: number; // randamentul vasului (pe − p0)/pe
   installed: number; // litri deja prevăzuți în schemă
   ok: boolean;
 }
 
 /**
  * Vas de expansiune cu membrană: Vn = Vu · pe/(pe − p0), presiuni absolute.
- * Dilatarea se ia între temperatura de regim și temperatura maximă de staționare.
+ * p0 se calculează din înălțimea statică a instalației (h/10 + 0,3 bar),
+ * iar pe din presiunea supapei de siguranță (90% din valoarea de deschidere).
  */
-export function expansionSizing(scheme: Scheme, tMaxInput?: number): ExpansionSizing {
+export function expansionSizing(scheme: Scheme): ExpansionSizing {
   const v = volumeTotals(scheme);
   const tMin = Math.min(scheme.temperature, 10);
-  const tMax = Math.max(tMaxInput ?? 40, tMin + 5);
+  const tMax = Math.max(scheme.tStagnation ?? 40, tMin + 5);
   const lo = fluidProps(scheme.fluid, scheme.concentration, tMin).rho;
   const hi = fluidProps(scheme.fluid, scheme.concentration, tMax).rho;
   const expansionFactor = Math.max(0, lo / hi - 1);
   const expansionVolume = v.total * expansionFactor;
   const reserve = Math.max(3, v.total * 0.005);
   const utilVolume = expansionVolume + reserve;
-  const p0 = 2.5; // 1,5 bar g static + 1
-  const pe = 4.0; // 3,0 bar g la supapă + 1
+  const staticHeight = scheme.staticHeight ?? 15;
+  const relief = scheme.reliefPressure ?? 3;
+  const p0 = staticHeight / 10 + 0.3 + 1; // bar absolut
+  const pe = Math.max(p0 + 0.5, relief * 0.9 + 1); // bar absolut
   const nominal = (utilVolume * pe) / (pe - p0);
   let installed = 0;
   for (const n of scheme.nodes) {
     if (n.type === "expansion") installed += n.volume ?? 0;
   }
+  const standard = STANDARD_TANKS.find((t) => t >= nominal) ?? Math.ceil(nominal / 100) * 100;
   return {
     tMin, tMax, expansionFactor, expansionVolume, reserve, utilVolume,
-    nominal: Math.ceil(nominal), p0, pe, installed,
+    nominal: Math.ceil(nominal), standard, staticHeight, p0, pe, relief,
+    efficiency: (pe - p0) / pe, installed,
     ok: installed >= nominal,
   };
 }

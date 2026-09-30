@@ -59,6 +59,11 @@ export interface Scheme {
   circuitColors: Partial<Record<CircuitId, string>>;
   customSymbols: CustomSymbol[];
   guides?: { id: string; dir: "h" | "v"; pos: number }[] | undefined; // linii ajutătoare de aliniere
+  velocityLimits?: Record<number, [number, number]> | undefined; // viteze recomandate pe DN (editabile)
+  maxR?: number | undefined; // cădere liniară maximă la dimensionare [Pa/m]
+  staticHeight?: number | undefined; // înălțime statică a instalației [m]
+  tStagnation?: number | undefined; // temperatura maximă de staționare [°C]
+  reliefPressure?: number | undefined; // presiunea supapei de siguranță [bar suprapresiune]
   revision: string;
   updatedAt: number;
 }

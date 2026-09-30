@@ -245,7 +245,7 @@ export const usePid = create<State>()(
         clipboardIds: [],
         modules: [],
         grid: 5,
-        cad: { ortho: true, osnap: true, showGrid: true },
+        cad: { ortho: false, osnap: true, showGrid: true },
         setCad: (p) => set((st) => ({ cad: { ...st.cad, ...p } })),
         setVelocityLimit: (dn, min, max) =>
           patchScheme((s) => ({

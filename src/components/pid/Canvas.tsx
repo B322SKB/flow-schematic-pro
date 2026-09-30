@@ -492,7 +492,7 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
       {/* bară de stare stil CAD */}
       {!readOnly && (
         <div className="absolute inset-x-0 bottom-0 flex items-center gap-1 border-t bg-card/95 px-2 py-1 font-mono text-[11px] text-muted-foreground backdrop-blur">
-          <span className="tabular-nums">{(mouse.x / 40).toFixed(2)}, {(mouse.y / 40).toFixed(2)} m</span>
+          <span className="whitespace-nowrap tabular-nums">{(mouse.x / 40).toFixed(2)}, {(mouse.y / 40).toFixed(2)} m</span>
           <span className="opacity-40">|</span>
           <span className="tabular-nums">{Math.round(view.k * 100)}%</span>
           <span className="opacity-40">|</span>

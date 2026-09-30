@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { FilePlus2, RefreshCcw, Sigma, Tags, Workflow, Gauge, ClipboardList, FileText, Image as ImageIcon, FileCode2 } from "lucide-react";
+import { FilePlus2, RefreshCcw, Sigma, Tags, Workflow, Gauge, ClipboardList, FileText, Image as ImageIcon, FileCode2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

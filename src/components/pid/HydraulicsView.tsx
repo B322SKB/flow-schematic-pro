@@ -136,6 +136,7 @@ export function HydraulicsView() {
     return a && !a.ambiguous && Math.abs(a.flow - p.flow) > 0.05;
   });
   const ringPipes = [...auto.entries()].filter(([, v]) => v.ambiguous).map(([id]) => tagOf(id));
+  const shown = results.filter(({ p, r }) => filter === "all" || (filter === "warn" ? !!r.velWarn : critSet.has(p.id)));
 
   return (
     <div className="h-full overflow-auto p-4">

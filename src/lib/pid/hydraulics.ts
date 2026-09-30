@@ -2,6 +2,7 @@ import { fittingK, getMaterial, innerDiameterMm, type FittingId } from "./catalo
 import type { FluidProps } from "./fluids";
 import type { Pipe, Scheme } from "./types";
 import { getSymbol } from "./symbols";
+import { limitsFor } from "./velocity";
 
 export function colebrook(Re: number, relRough: number) {
   if (Re < 2300) return 64 / Math.max(Re, 1e-9);
@@ -78,11 +79,8 @@ export function portPos(scheme: Scheme, nodeId: string, portId: string) {
   };
 }
 
-export function velocityLimits(dn: number): [number, number] {
-  if (dn <= 25) return [0.3, 1.0];
-  if (dn <= 50) return [0.4, 1.5];
-  if (dn <= 100) return [0.5, 2.0];
-  return [0.6, 2.8];
+export function velocityLimits(dn: number, scheme?: Scheme | undefined): [number, number] {
+  return limitsFor(dn, scheme);
 }
 
 /** Cota verticală (m) introdusă prin simbolurile de urcare/coborâre de la capătul conductei. */
@@ -122,7 +120,7 @@ export function computePipe(pipe: Pipe, scheme: Scheme, fp: FluidProps): PipeRes
   const dpLoc = Ksum * dyn;
   const dpComp = Kcomp * dyn + dpFixed;
   const dpStatic = 0; // circuit închis: coloana statică se compensează
-  const [lo, hi] = velocityLimits(pipe.dn);
+  const [lo, hi] = velocityLimits(pipe.dn, scheme);
   return {
     id: pipe.id, tag: pipe.tag, d, v, Re,
     regime: Re < 2300 ? "laminar" : Re < 4000 ? "tranziție" : "turbulent",

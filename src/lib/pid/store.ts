@@ -6,9 +6,10 @@ import {
 } from "./catalog";
 import { getSymbol, syncCustomSymbols, type CustomSymbol, type SymbolType } from "./symbols";
 import type { Pipe, PidNode, Scheme } from "./types";
-import { pipeRoute } from "./hydraulics";
+import { colebrook, pipeRoute } from "./hydraulics";
 import { flowFromKw, fluidProps } from "./fluids";
 import { propagateFlows, totalDemand } from "./network";
+import { limitsFor, maxR } from "./velocity";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 export const PX_PER_M = 40;
@@ -38,6 +39,10 @@ interface State {
   selected: { kind: "node" | "pipe"; id: string } | null;
   multi: string[]; // noduri selectate în grup
   grid: number; // pas grilă (px)
+  cad: { ortho: boolean; osnap: boolean; showGrid: boolean }; // comutatoare stil CAD
+  setCad: (p: Partial<State["cad"]>) => void;
+  setVelocityLimit: (dn: number, min: number, max: number) => void;
+  resetVelocityLimits: () => void;
   setGrid: (g: number) => void;
   setMulti: (ids: string[]) => void;
   setMultiPipes: (ids: string[]) => void;
@@ -55,7 +60,7 @@ interface State {
   addPipe: (from: Pipe["from"], to: Pipe["to"], opts?: { direct?: boolean; circuit?: CircuitId }) => void;
   addPipeToEnd: (from: Pipe["from"], x: number, y: number) => void;
   insertNodeOnPipe: (nodeId: string) => boolean;
-  autoSizePipes: () => { pipes: number; valves: number };
+  autoSizePipes: () => { pipes: number; valves: number; skipped: number };
   saveModule: (name: string, ids: string[]) => void;
   removeModule: (id: string) => void;
   insertModule: (id: string, x: number, y: number) => void;
@@ -240,6 +245,14 @@ export const usePid = create<State>()(
         clipboardIds: [],
         modules: [],
         grid: 5,
+        cad: { ortho: true, osnap: true, showGrid: true },
+        setCad: (p) => set((st) => ({ cad: { ...st.cad, ...p } })),
+        setVelocityLimit: (dn, min, max) =>
+          patchScheme((s) => ({
+            ...s,
+            velocityLimits: { ...(s.velocityLimits ?? {}), [dn]: [min, max] as [number, number] },
+          })),
+        resetVelocityLimits: () => patchScheme((s) => ({ ...s, velocityLimits: undefined })),
         setGrid: (g) => set({ grid: g }),
         setMulti: (ids) => set({ multi: ids }),
         setMultiPipes: (ids) => set({ multiPipes: ids }),
@@ -459,33 +472,54 @@ export const usePid = create<State>()(
           return true;
         },
 
+        /**
+         * Dimensionare cu dublu criteriu: viteza rămâne în intervalul recomandat pentru
+         * treapta de DN (tabel editabil de utilizator) și căderea liniară nu depășește
+         * limita R [Pa/m]. Se alege cel mai mic diametru care respectă ambele condiții.
+         */
         autoSizePipes: () => {
           const st = get();
           const s = st.scheme;
+          const fp = fluidProps(s.fluid, s.concentration, s.temperature);
+          const rMax = maxR(s);
           const tags = s.pipes.map((p) => p.tag);
-          let pipes = 0;
+          let pipes = 0, skipped = 0;
           const dnMap = new Map<string, number>();
           const next = s.pipes.map((p) => {
-            if (p.direct || p.flow <= 0) return p;
+            if (p.direct) return p;
+            if (p.flow <= 0) { skipped++; return p; }
             const [lo, hi] = getMaterial(p.material).dnRange;
             const list = DN_LIST.filter((d) => d >= lo && d <= hi);
-            let chosen = list[list.length - 1]!;
+            const mat = getMaterial(p.material);
+            let chosen: number | null = null;
+            let fallback = list[list.length - 1]!;
             for (const d of list) {
               const di = innerDiameterMm(p.material, d) / 1000;
               const v = p.flow / 3600 / ((Math.PI * di * di) / 4);
-              if (v <= 1.2) { chosen = d; break; }
+              const Re = (v * di) / fp.nu;
+              const f = colebrook(Re, mat.roughness / 1000 / di);
+              const R = (f / di) * (fp.rho * v * v) / 2;
+              const [vMin, vMax] = limitsFor(d, s);
+              if (v <= vMax && R <= rMax) {
+                fallback = d;
+                if (v >= vMin) { chosen = d; break; }
+                // viteză prea mică: se acceptă doar dacă nicio treaptă mai mică nu merge
+                if (chosen === null) chosen = d;
+                break;
+              }
             }
-            if (chosen !== p.dn) {
+            const pick = chosen ?? fallback;
+            if (pick !== p.dn) {
               pipes++;
-              dnMap.set(p.id, chosen);
-              const np = { ...p, dn: chosen };
+              dnMap.set(p.id, pick);
+              const np = { ...p, dn: pick };
               np.tag = pipeTag(np, tags);
               tags.push(np.tag);
               return np;
             }
             return p;
           });
-          // vanele de pe tronsoanele redimensionate preiau DN-ul nou
+          // vanele și fitingurile de pe tronsoanele redimensionate preiau DN-ul nou
           let valves = 0;
           const nodes = s.nodes.map((n) => {
             if (!n.dn || getSymbol(n.type).bomGroup !== "Vane") return n;
@@ -495,7 +529,7 @@ export const usePid = create<State>()(
             return { ...n, dn: rel.dn };
           });
           patchScheme((s2) => ({ ...s2, pipes: next, nodes }));
-          return { pipes, valves };
+          return { pipes, valves, skipped };
         },
 
         saveModule: (name, ids) => {
@@ -697,7 +731,7 @@ export const usePid = create<State>()(
     },
     {
       name: "pid-studio-v2",
-      partialize: (s) => ({ projects: s.projects, activeId: s.activeId, pipeDefaults: s.pipeDefaults, grid: s.grid, modules: s.modules }),
+      partialize: (s) => ({ projects: s.projects, activeId: s.activeId, pipeDefaults: s.pipeDefaults, grid: s.grid, modules: s.modules, cad: s.cad }),
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<State>;
         const projects = p.projects?.length ? p.projects : current.projects;

@@ -137,8 +137,8 @@ function App() {
         </div>
       </header>
       <TabsContent value="editor" className="mt-0 min-h-0 flex-1">
-        <div className="grid h-full grid-cols-[230px_1fr_310px]">
-          <Palette />
+        <div className="grid h-full" style={{ gridTemplateColumns: `${leftOpen ? "230px" : "0px"} 1fr ${rightOpen ? "310px" : "0px"}` }}>
+          <div className={leftOpen ? "min-w-0 overflow-hidden" : "hidden"}><Palette /></div>
           <div className="relative min-w-0">
             <PidCanvas svgRef={svgRef} showTags={mode === "coded"} hideCodes={mode === "clean"} />
             <div className="pointer-events-none absolute left-3 top-3 flex max-w-[60%] flex-wrap gap-2 rounded-md border bg-card/90 px-3 py-1.5 text-[11px] backdrop-blur">
@@ -146,8 +146,16 @@ function App() {
                 <span key={c} className="flex items-center gap-1"><span className="h-0.5 w-4" style={{ background: circuitColor(scheme, c) }} />{CIRCUITS[c].name}</span>
               ))}
             </div>
+            <Button size="icon" variant="secondary" className="absolute left-0 top-1/2 h-10 w-5 -translate-y-1/2 rounded-l-none"
+              title={leftOpen ? "Ascunde paleta de elemente" : "Arată paleta de elemente"} onClick={() => setLeftOpen((v) => !v)}>
+              {leftOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </Button>
+            <Button size="icon" variant="secondary" className="absolute right-0 top-1/2 h-10 w-5 -translate-y-1/2 rounded-r-none"
+              title={rightOpen ? "Ascunde panoul de proprietăți" : "Arată panoul de proprietăți"} onClick={() => setRightOpen((v) => !v)}>
+              {rightOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+            </Button>
           </div>
-          <Inspector />
+          <div className={rightOpen ? "min-w-0 overflow-hidden" : "hidden"}><Inspector /></div>
         </div>
       </TabsContent>
       <TabsContent value="hydro" className="mt-0 min-h-0 flex-1"><HydraulicsView /></TabsContent>

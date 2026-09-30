@@ -187,11 +187,12 @@ export function HydraulicsView() {
             </Button>
             <Button size="sm" variant="secondary" className="w-full gap-1.5" onClick={() => {
               const r = autoSizePipes();
+              const skip = r.skipped ? ` · ${r.skipped} tronson(e) fără debit au fost sărite` : "";
               toast.success(r.pipes || r.valves
-                ? `Auto-dimensionare: ${r.pipes} tronson(e) redimensionate · ${r.valves} vană(e) actualizate (v ≤ 1,2 m/s)`
-                : "Dimensiunile actuale sunt corecte pentru debitele existente.");
+                ? `Auto-dimensionare: ${r.pipes} tronson(e) redimensionate · ${r.valves} vană(e) actualizate${skip}`
+                : `Dimensiunile actuale respectă vitezele din tabel și R ≤ ${scheme.maxR ?? DEFAULT_MAX_R} Pa/m.${skip}`);
             }}>
-              <Wand2 className="h-3.5 w-3.5" />Auto-dimensionare DN (v ≤ 1,2 m/s)
+              <Wand2 className="h-3.5 w-3.5" />Auto-dimensionare DN (viteze din tabel)
             </Button>
             {drift.length > 0 && (
               <p className="text-warning">

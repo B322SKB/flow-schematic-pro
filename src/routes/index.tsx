@@ -53,6 +53,8 @@ function App() {
   };
   const pw = powerTotals(scheme);
   const [mode, setMode] = useState<"normal" | "clean" | "coded">("normal");
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
   const wait = () => new Promise((r) => setTimeout(r, 120));
   const run = async (fn: () => unknown, label: string, m: "clean" | "coded" = "coded") => {
     usePid.getState().select(null);

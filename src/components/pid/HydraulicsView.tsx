@@ -338,7 +338,8 @@ export function HydraulicsView() {
               ))}
             </TableBody>
           </Table>
-          <p className="mt-3 text-[11px] text-muted-foreground">Limite viteză recomandate: ≤DN25 0,3–1,0 m/s · ≤DN50 0,4–1,5 · ≤DN100 0,5–2,0 · &gt;DN100 0,6–2,8 m/s. L = laminar (Re&lt;2300), T = turbulent.</p>
+          {!shown.length && <p className="py-6 text-center text-xs text-muted-foreground">Niciun tronson nu corespunde filtrului selectat.</p>}
+          <p className="mt-3 text-[11px] text-muted-foreground">Vitezele recomandate se pot modifica în tabelul „Viteze recomandate pe diametru”. L = laminar (Re&lt;2300), T = turbulent.</p>
         </CardContent>
       </Card>
     </div>
@@ -346,7 +347,7 @@ export function HydraulicsView() {
         <CardHeader className="pb-3"><CardTitle className="text-sm">Schemă cu coduri pentru trasabilitatea calculului</CardTitle></CardHeader>
         <CardContent>
           <div className="h-[560px] overflow-hidden rounded-md border">
-            <PidCanvas readOnly showTags critical={critical} />
+            <PidCanvas readOnly showTags critical={critical} focus={focus} />
           </div>
         </CardContent>
       </Card>

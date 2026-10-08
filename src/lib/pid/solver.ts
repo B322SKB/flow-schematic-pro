@@ -331,7 +331,7 @@ export function solveNetwork(scheme: Scheme, fp: FluidProps, opts: SolverOptions
   for (const r of pipesOut.values()) for (const w of r.warnings) warnings.push(w);
 
   const blocking = warnings.some((w) => w.severity === "error");
-  const incomplete = [...pipesOut.values()].some((r) => r.status === "incomplete" && Math.abs(r.flowSigned) > 0 === false && !r.warnings.every((w) => w.code === "no_flow"));
+  const incomplete = [...pipesOut.values()].some((r) => r.warnings.some((w) => w.code === "missing_dn" || w.code === "missing_material"));
   const networkSolved = converged && !blocking && valid.length > 0;
   const status: SolverResult["status"] = !converged || unresolved.size ? "unresolved" : blocking || incomplete ? "incomplete" : networkSolved ? "solved" : "evaluated";
   return {

@@ -44,17 +44,17 @@ export function BulkPanel() {
   const apply = () => {
     if (total > BIG && !confirm(`Aplici modificarea pe ${total} obiecte?`)) return;
     const pPatch: PipeBulkPatch = {};
-    if (pp.circuit !== undefined && pp.circuit !== KEEP) pPatch.circuit = pp.circuit as CircuitId;
-    if (pp.material !== undefined && pp.material !== KEEP) pPatch.material = pp.material as MaterialId;
-    if (pp.joint !== undefined && pp.joint !== KEEP) pPatch.joint = pp.joint as JointType;
-    if (pp.dn !== undefined && pp.dn !== KEEP) pPatch.dn = Number(pp.dn);
-    if (pp.disabled !== undefined && pp.disabled !== KEEP) pPatch.disabled = pp.disabled === "yes";
-    if (pp.layer !== undefined && pp.layer !== KEEP) pPatch.layer = pp.layer as LayerId;
+    if (pp["circuit"] !== undefined && pp["circuit"] !== KEEP) pPatch.circuit = pp["circuit"] as CircuitId;
+    if (pp["material"] !== undefined && pp["material"] !== KEEP) pPatch.material = pp["material"] as MaterialId;
+    if (pp["joint"] !== undefined && pp["joint"] !== KEEP) pPatch.joint = pp["joint"] as JointType;
+    if (pp["dn"] !== undefined && pp["dn"] !== KEEP) pPatch.dn = Number(pp["dn"]);
+    if (pp["disabled"] !== undefined && pp["disabled"] !== KEEP) pPatch.disabled = pp["disabled"] === "yes";
+    if (pp["layer"] !== undefined && pp["layer"] !== KEEP) pPatch.layer = pp["layer"] as LayerId;
     if (insulation.trim()) pPatch.insulation = insulation.trim();
     const nPatch: NodeBulkPatch = {};
-    if (np.redundant !== undefined && np.redundant !== KEEP) nPatch.redundant = np.redundant === "yes";
-    if (np.layer !== undefined && np.layer !== KEEP) nPatch.layer = np.layer as LayerId;
-    if (np.dn !== undefined && np.dn !== KEEP) nPatch.dn = Number(np.dn);
+    if (np["redundant"] !== undefined && np["redundant"] !== KEEP) nPatch.redundant = np["redundant"] === "yes";
+    if (np["layer"] !== undefined && np["layer"] !== KEEP) nPatch.layer = np["layer"] as LayerId;
+    if (np["dn"] !== undefined && np["dn"] !== KEEP) nPatch.dn = Number(np["dn"]);
     const msgs: string[] = [];
     let changed = 0;
     transact(`Bulk edit (${total} obiecte)`, () => {

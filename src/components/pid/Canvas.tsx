@@ -241,7 +241,7 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
       // dreapta → stânga = fereastră „crossing" (prinde tot ce atinge caseta)
       const crossing = mouse.x < d.x0;
       const inBox = (x: number, y: number) => x >= x1 && x <= x2 && y >= y1 && y <= y2;
-      const ids = scheme.nodes.filter((n) => {
+      const ids = visNodes.filter((n) => {
         const s = getSymbol(n.type);
         if (crossing) {
           return !(n.x + s.w / 2 < x1 || n.x - s.w / 2 > x2 || n.y + s.h / 2 < y1 || n.y - s.h / 2 > y2);
@@ -249,7 +249,7 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
         return inBox(n.x - s.w / 2, n.y - s.h / 2) && inBox(n.x + s.w / 2, n.y + s.h / 2);
       }).map((n) => n.id);
       setMulti(ids);
-      const pipeIds = scheme.pipes.filter((p) => {
+      const pipeIds = visPipes.filter((p) => {
         if (p.direct) return false;
         const pts = pipeRoute(p, scheme);
         if (!pts.length) return false;

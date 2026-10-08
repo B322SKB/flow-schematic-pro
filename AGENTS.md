@@ -15,3 +15,4 @@
 - Hydraulic system Δp is taken from the critical path (network.ts evaluateNetwork), never the sum of branches — circuitTotals is an inventory only.
 - Hydraulic primitives in hydraulics.ts are pure and covered by vitest (src/lib/pid/*.test.ts) — keeps the engine verifiable.
 - Network flows/Δp come from src/lib/pid/solver.ts (Hardy-Cross per circuit); propagateFlows stays the deterministic radial path — loops must go through the solver, documented in docs/hydraulics-limitations.md.
+- DN sizing modes and candidate lists live in src/lib/pid/sizing.ts (planSizing re-solves the network after each pass); Engineering Check/project summary in src/lib/pid/checks.ts — UI only renders them.

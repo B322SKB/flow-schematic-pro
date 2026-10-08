@@ -19,6 +19,8 @@ import { usePid } from "@/lib/pid/store";
 import { PidCanvas } from "./Canvas";
 import { Switch } from "@/components/ui/switch";
 import { Field, Sel } from "./fields";
+import { CandidatesCard, EngineeringCheckCard, SizingControls } from "./DesignPanels";
+import type { SizingMode } from "@/lib/pid/sizing";
 
 export function FluidCard() {
   const { scheme, setScheme } = usePid();
@@ -113,6 +115,7 @@ export function HydraulicsView() {
   const [qu, setQu] = useState<"m3h" | "ls">("m3h");
   const [filter, setFilter] = useState<"all" | "warn" | "crit">("all");
   const [focus, setFocus] = useState<string | null>(null);
+  const [sizeMode, setSizeMode] = useState<SizingMode>("legacy");
   const fp = fluidProps(scheme.fluid, scheme.concentration, scheme.temperature);
   const results = scheme.pipes.filter((p) => !p.disabled).map((p) => ({ p, r: computePipe(p, scheme, fp) }));
   const disabled = scheme.pipes.filter((p) => p.disabled);
@@ -144,6 +147,7 @@ export function HydraulicsView() {
     <div className="h-full overflow-auto p-4">
     <div className="grid grid-cols-[320px_1fr] gap-4">
       <div className="space-y-4">
+        <EngineeringCheckCard fp={fp} solution={sol} onPick={(id) => { if (scheme.pipes.some((p) => p.id === id)) { select({ kind: "pipe", id }); setFocus(id); } }} />
         <FluidCard />
         <Card>
           <CardHeader className="pb-3"><CardTitle className="text-sm">Unități</CardTitle></CardHeader>
@@ -187,15 +191,7 @@ export function HydraulicsView() {
             }}>
               <Sigma className="h-3.5 w-3.5" />Calculează debitele automat
             </Button>
-            <Button size="sm" variant="secondary" className="w-full gap-1.5" onClick={() => {
-              const r = autoSizePipes();
-              const skip = r.skipped ? ` · ${r.skipped} tronson(e) fără debit au fost sărite` : "";
-              toast.success(r.pipes || r.valves
-                ? `Auto-dimensionare: ${r.pipes} tronson(e) redimensionate · ${r.valves} vană(e) actualizate${skip}`
-                : `Dimensiunile actuale respectă vitezele din tabel și R ≤ ${scheme.maxR ?? DEFAULT_MAX_R} Pa/m.${skip}`);
-            }}>
-              <Wand2 className="h-3.5 w-3.5" />Auto-dimensionare DN (viteze din tabel)
-            </Button>
+            <SizingControls mode={sizeMode} setMode={setSizeMode} />
             {drift.length > 0 && (
               <p className="text-warning">
                 Diferă de cererea consumatorilor: {drift.slice(0, 6).map((p) => p.tag).join(", ")}{drift.length > 6 ? "…" : ""}
@@ -365,6 +361,7 @@ export function HydraulicsView() {
         </CardContent>
       </Card>
     </div>
+      <CandidatesCard pipeId={focus} mode={sizeMode} fp={fp} />
       <Card className="mt-4">
         <CardHeader className="pb-3"><CardTitle className="text-sm">Schemă cu coduri pentru trasabilitatea calculului</CardTitle></CardHeader>
         <CardContent>

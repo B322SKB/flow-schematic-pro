@@ -6,7 +6,8 @@ import {
 } from "./catalog";
 import { getSymbol, syncCustomSymbols, type CustomSymbol, type SymbolType } from "./symbols";
 import type { Pipe, PidNode, Scheme } from "./types";
-import { pipeRoute, selectDn } from "./hydraulics";
+import { pipeRoute } from "./hydraulics";
+import { planSizing, type SizingMode } from "./sizing";
 import { solveNetwork } from "./solver";
 import { flowFromKw, fluidProps } from "./fluids";
 import { propagateFlows, totalDemand } from "./network";
@@ -61,7 +62,11 @@ interface State {
   addPipe: (from: Pipe["from"], to: Pipe["to"], opts?: { direct?: boolean; circuit?: CircuitId }) => void;
   addPipeToEnd: (from: Pipe["from"], x: number, y: number) => void;
   insertNodeOnPipe: (nodeId: string) => boolean;
-  autoSizePipes: () => { pipes: number; valves: number; skipped: number };
+  autoSizePipes: (mode?: SizingMode) => { pipes: number; valves: number; skipped: number };
+  /** Instantaneu pentru Undo al ultimei redimensionări (doar DN/tag; nu se persistă). */
+  sizingUndo: { schemeId: string; pipes: { id: string; dn: number; tag: string }[]; nodes: { id: string; dn?: number | undefined }[] } | null;
+  undoSizing: () => boolean;
+  applyPipeDn: (pipeId: string, dn: number) => void;
   saveModule: (name: string, ids: string[]) => void;
   removeModule: (id: string) => void;
   insertModule: (id: string, x: number, y: number) => void;
@@ -478,27 +483,25 @@ export const usePid = create<State>()(
          * treapta de DN (tabel editabil de utilizator) și căderea liniară nu depășește
          * limita R [Pa/m]. Se alege cel mai mic diametru care respectă ambele condiții.
          */
-        autoSizePipes: () => {
+        sizingUndo: null,
+
+        autoSizePipes: (mode = "legacy") => {
           const st = get();
           const s = st.scheme;
           const fp = fluidProps(s.fluid, s.concentration, s.temperature);
-          const rMax = maxR(s);
+          const plan = planSizing(s, fp, { mode, rMax: maxR(s) });
           const tags = s.pipes.map((p) => p.tag);
           let pipes = 0, skipped = 0;
-          const dnMap = new Map<string, number>();
+          for (const sz of plan.sizes.values()) if (sz.status === "skipped" && !s.pipes.find((p) => p.id === sz.pipeId)?.direct) skipped++;
+          const dnMap = plan.changes;
           const next = s.pipes.map((p) => {
-            if (p.direct) return p;
-            if (p.flow <= 0) { skipped++; return p; }
-            const pick = selectDn(p.material, p.flow, fp, rMax, s);
-            if (pick !== p.dn) {
-              pipes++;
-              dnMap.set(p.id, pick);
-              const np = { ...p, dn: pick };
-              np.tag = pipeTag(np, tags);
-              tags.push(np.tag);
-              return np;
-            }
-            return p;
+            const pick = dnMap.get(p.id);
+            if (pick === undefined) return p;
+            pipes++;
+            const np = { ...p, dn: pick };
+            np.tag = pipeTag(np, tags);
+            tags.push(np.tag);
+            return np;
           });
           // vanele și fitingurile de pe tronsoanele redimensionate preiau DN-ul nou
           let valves = 0;
@@ -509,8 +512,39 @@ export const usePid = create<State>()(
             valves++;
             return { ...n, dn: rel.dn };
           });
-          patchScheme((s2) => ({ ...s2, pipes: next, nodes }));
+          if (pipes || valves) {
+            const undo = {
+              schemeId: s.id,
+              pipes: s.pipes.filter((p) => dnMap.has(p.id)).map((p) => ({ id: p.id, dn: p.dn, tag: p.tag })),
+              nodes: s.nodes.filter((n, i) => nodes[i] !== n).map((n) => ({ id: n.id, dn: n.dn })),
+            };
+            patchScheme((s2) => ({ ...s2, pipes: next, nodes }), { sizingUndo: undo });
+          }
           return { pipes, valves, skipped };
+        },
+
+        applyPipeDn: (pipeId, dn) => {
+          const s = get().scheme;
+          const p = s.pipes.find((x) => x.id === pipeId);
+          if (!p || p.dn === dn) return;
+          const undo = { schemeId: s.id, pipes: [{ id: p.id, dn: p.dn, tag: p.tag }], nodes: [] };
+          const tags = s.pipes.filter((x) => x.id !== pipeId).map((x) => x.tag);
+          patchScheme((s2) => ({ ...s2, pipes: s2.pipes.map((x) => (x.id === pipeId ? { ...x, dn, tag: pipeTag({ ...x, dn }, tags) } : x)) }), { sizingUndo: undo });
+        },
+
+        undoSizing: () => {
+          const st = get();
+          const u = st.sizingUndo;
+          if (!u || u.schemeId !== st.scheme.id) return false;
+          const pm = new Map(u.pipes.map((x) => [x.id, x]));
+          const nm = new Map(u.nodes.map((x) => [x.id, x]));
+          // se restaurează doar DN/tag; celelalte modificări ale utilizatorului rămân intacte
+          patchScheme((s2) => ({
+            ...s2,
+            pipes: s2.pipes.map((p) => (pm.has(p.id) ? { ...p, dn: pm.get(p.id)!.dn, tag: pm.get(p.id)!.tag } : p)),
+            nodes: s2.nodes.map((n) => (nm.has(n.id) ? { ...n, dn: nm.get(n.id)!.dn } : n)),
+          }), { sizingUndo: null });
+          return true;
         },
 
         saveModule: (name, ids) => {

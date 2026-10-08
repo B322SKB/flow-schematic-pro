@@ -114,7 +114,8 @@ describe("rețea ramificată", () => {
     expect(ev.systemDp).toBeCloseTo(r("P1") + r("P2"), 6);
     expect(ev.systemDp).toBeLessThan(sumAll);
     expect(ev.critical?.method).toBe("critical-path-evaluation");
-    expect(ev.networkSolved).toBe(false);
+    expect(ev.networkSolved).toBe(true);
+    expect(ev.status).toBe("solved");
     // separare conductă / echipament
     const p2 = ev.pipes.get("P2")!;
     expect(p2.dpComp).toBeCloseTo(30000, 6);
@@ -156,7 +157,7 @@ describe("statusuri", () => {
 });
 
 describe("buclă / ramuri paralele", () => {
-  it("tronsoanele paralele sunt marcate ambiguous, rețeaua unresolved", () => {
+  it("propagarea marchează paralelele ambiguous; solverul de rețea le rezolvă (Sprint 2)", () => {
     const s = scheme(
       [node("CH", "chiller", 0, 0), node("T1", "tee", 200, 0), node("T2", "tee", 500, 0), node("A", "ccu", 800, 0, { flow: 10, dpFixed: 20 })],
       [
@@ -170,8 +171,12 @@ describe("buclă / ramuri paralele", () => {
     expect(f.get("L1")?.ambiguous).toBe(true);
     expect(f.get("L2")?.ambiguous).toBe(true);
     const ev = evaluateNetwork(s, FP);
-    expect(ev.status).toBe("unresolved");
-    expect(ev.warnings.some((w) => w.code === "flow_unresolved")).toBe(true);
+    expect(ev.status).toBe("solved");
+    expect(ev.solution.converged).toBe(true);
+    // fără convergență (1 iterație, toleranță imposibilă) rămâne unresolved
+    const bad = evaluateNetwork(s, FP, { maxIterations: 1, tolPa: 1e-12, tolFlow: 1e-12 });
+    expect(bad.status).toBe("unresolved");
+    expect(bad.warnings.some((w) => w.code === "flow_unresolved" || w.code === "not_converged")).toBe(true);
     expect(criticalPath(s, FP)?.method).toBe("critical-path-evaluation");
   });
 });

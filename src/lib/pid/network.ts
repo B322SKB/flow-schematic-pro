@@ -2,6 +2,7 @@
 import { flowFromKw, type FluidProps } from "./fluids";
 import { circuitTotals, computePipe, type CalcWarning, type PipeResult } from "./hydraulics";
 import { getSymbol } from "./symbols";
+import { solveNetwork, type SolverOptions, type SolverResult } from "./solver";
 import type { PidNode, Scheme } from "./types";
 
 /** Debitul cerut de un element consumator [m³/h]. Elementele redundante nu consumă în regim normal. */
@@ -242,7 +243,7 @@ export function pumpDuty(scheme: Scheme, fp: FluidProps): PumpDuty {
 /* Evaluarea rețelei: statusuri și avertizări                          */
 /* ------------------------------------------------------------------ */
 
-export type NetworkStatus = "evaluated" | "incomplete" | "unresolved";
+export type NetworkStatus = "solved" | "evaluated" | "incomplete" | "unresolved";
 
 export interface NetworkEvaluation {
   /** (a)+(b) rezultate pe fiecare tronson */
@@ -254,13 +255,15 @@ export interface NetworkEvaluation {
   /** Δp de sistem = Δp pe traseul critic (niciodată suma ramurilor paralele) */
   systemDp: number;
   flows: Map<string, FlowInfo>;
-  /** false: rețeaua NU este rezolvată prin continuitate + bilanț energetic (Sprint 2) */
-  networkSolved: false;
+  /** true doar dacă solverul de rețea (continuitate + bilanț energetic) a convers fără erori blocante */
+  networkSolved: boolean;
   status: NetworkStatus;
+  /** Rezultatul solverului de rețea (Hardy-Cross). */
+  solution: SolverResult;
   warnings: CalcWarning[];
 }
 
-export function evaluateNetwork(scheme: Scheme, fp: FluidProps): NetworkEvaluation {
+export function evaluateNetwork(scheme: Scheme, fp: FluidProps, opts?: SolverOptions): NetworkEvaluation {
   const active = scheme.pipes.filter((p) => !p.disabled);
   const pipes = new Map(active.map((p) => [p.id, computePipe(p, scheme, fp)] as const));
   const flows = propagateFlows(scheme, fp);
@@ -288,10 +291,18 @@ export function evaluateNetwork(scheme: Scheme, fp: FluidProps): NetworkEvaluati
     }
   }
   const incomplete = [...pipes.values()].some((r) => r.status === "incomplete");
+  const solution = solveNetwork(scheme, fp, opts);
+  // tronsoanele de inel nedeductibile prin propagare sunt rezolvate de solver dacă acesta converge
+  if (solution.converged) unresolved = false;
+  for (const w of solution.warnings) if (w.severity === "error" || ["not_converged", "multi_source_split", "source_inferred", "r_over_limit", "terminal_flow_inconsistent", "source_demand_mismatch", "equipment_dp_no_ref", "isolated_node", "source_head_unknown"].includes(w.code)) warnings.push(w);
+  const final = solution.converged ? warnings.filter((w) => w.code !== "flow_unresolved") : warnings;
   return {
-    pipes, critical, circuits: circuitTotals(scheme, fp), systemDp: critical?.dp ?? 0, flows,
-    networkSolved: false,
-    status: unresolved ? "unresolved" : incomplete ? "incomplete" : "evaluated",
-    warnings,
+    pipes, critical, circuits: circuitTotals(scheme, fp),
+    systemDp: solution.networkSolved ? solution.systemDp : critical?.dp ?? 0,
+    flows,
+    networkSolved: solution.networkSolved,
+    status: solution.networkSolved ? "solved" : solution.status === "unresolved" || unresolved ? "unresolved" : incomplete || solution.status === "incomplete" ? "incomplete" : "evaluated",
+    solution,
+    warnings: final,
   };
 }

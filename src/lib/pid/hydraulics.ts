@@ -176,12 +176,20 @@ export type CalcStatus = "ok" | "warning" | "incomplete";
 export type CalcWarningCode =
   | "no_flow" | "transitional_re" | "missing_dn" | "missing_material"
   | "equipment_no_dp" | "manual_flow_auto_available" | "velocity_low" | "velocity_high"
-  | "approx_fluid_props" | "flow_unresolved";
+  | "approx_fluid_props" | "flow_unresolved"
+  | "r_over_limit" | "isolated_node" | "invalid_pipe_end" | "no_source" | "terminal_no_path"
+  | "loop_insufficient_data" | "terminal_flow_inconsistent" | "source_demand_mismatch"
+  | "not_converged" | "source_inferred" | "multi_source_split" | "source_head_unknown"
+  | "equipment_dp_no_ref";
+
+/** error = blochează rezultatul (nu este valid); warning = rezultat cu rezervă; info = notă. */
+export type Severity = "error" | "warning" | "info";
 
 export interface CalcWarning {
   code: CalcWarningCode;
   message: string;
   target?: string | undefined; // id tronson / nod
+  severity?: Severity | undefined; // implicit "warning"
 }
 
 export interface PipeResult {
@@ -210,7 +218,18 @@ export interface PipeResult {
   warnings: CalcWarning[];
 }
 
-export function computePipe(pipe: Pipe, scheme: Scheme, fp: FluidProps): PipeResult {
+export interface ComputeOpts {
+  /** Debit (valoare absolută, m³/h) folosit în locul pipe.flow – utilizat de solver. */
+  flow?: number | undefined;
+  /**
+   * Debitul de referință la care este dat Δp fix al echipamentului. Dacă este dat,
+   * Δp_eq = dpFixed·(Q/Qref)² (comportament pătratic, tip Kv). Altfel Δp fix constant.
+   */
+  compRefFlow?: number | undefined;
+}
+
+export function computePipe(pipe: Pipe, scheme: Scheme, fp: FluidProps, opts?: ComputeOpts): PipeResult {
+  if (opts?.flow !== undefined) pipe = { ...pipe, flow: Math.abs(opts.flow) };
   const warnings: CalcWarning[] = [];
   const mat = pipe.material ? getMaterial(pipe.material) : undefined;
   if (!mat) warnings.push({ code: "missing_material", message: "Material lipsă", target: pipe.id });
@@ -233,7 +252,10 @@ export function computePipe(pipe: Pipe, scheme: Scheme, fp: FluidProps): PipeRes
   if (target) {
     const sym = getSymbol(target.type);
     if (sym.K !== undefined) Kcomp += target.kOverride ?? sym.K;
-    if (target.dpFixed) dpFixed += target.dpFixed * 1000;
+    if (target.dpFixed) {
+      const ref = opts?.compRefFlow;
+      dpFixed += target.dpFixed * 1000 * (ref && ref > 0 ? (pipe.flow / ref) ** 2 : 1);
+    }
     if ((sym.terminal || sym.source) && !target.dpFixed && target.kOverride === undefined) {
       warnings.push({ code: "equipment_no_dp", message: `${target.tag}: echipament fără Δp definit`, target: target.id });
     }

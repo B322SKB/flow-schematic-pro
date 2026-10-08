@@ -90,11 +90,11 @@ export function applyProposal(p: Proposal, st: State) {
   if (!a) return;
   if (a.kind === "select") { st.setSelection(a.nodes, a.pipes); st.requestView({ kind: "selection" }); }
   else if (a.kind === "view") st.setVisualMode(a.mode);
-  else st.transact(a.label, () => st.bulkPipes({}, []) && usePatch(st, a.scheme));
+  else st.transact(a.label, () => applySchemeDiff(st, a.scheme));
 }
 
 // schema propusă se aplică printr-o editare în masă a câmpurilor diferite (păstrând blocările de strat)
-function usePatch(st: State, next: Scheme) {
+function applySchemeDiff(st: State, next: Scheme) {
   const cur = st.scheme;
   for (const p of next.pipes) {
     const o = cur.pipes.find((x) => x.id === p.id);

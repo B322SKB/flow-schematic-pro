@@ -238,7 +238,7 @@ export async function exportSchemePdf(out: SvgOut, coded: SvgOut, scheme: Scheme
   });
   const tot = circuitTotals(scheme, fp);
   autoTable(doc, {
-    head: [["Circuit", "Segmente", "Lungime [m]", "dp [kPa]"]],
+    head: [["Circuit", "Segmente", "Lungime [m]", "Sum dp tronsoane [kPa] (inventar, nu dp sistem)"]],
     body: [...tot.entries()].map(([c, v]) => [ascii(CIRCUITS[c as CircuitId].name), String(v.n), v.L.toFixed(1), (v.dp / 1000).toFixed(2)]),
     styles: { fontSize: 8 },
     headStyles: { fillColor: [30, 41, 59] },
@@ -251,10 +251,10 @@ export async function exportSchemePdf(out: SvgOut, coded: SvgOut, scheme: Scheme
   const exp = expansionSizing(scheme);
   const tagOf = (id: string) => scheme.pipes.find((p) => p.id === id)?.tag ?? "";
   const synth: [string, string][] = [
-    ["Traseu critic", duty.path ? ascii(`${duty.path.pipes.map(tagOf).join(" > ")} -> ${duty.path.endTag}`).slice(0, 90) : "-"],
+    ["Traseu critic (evaluare, retea nerezolvata complet)", duty.path ? ascii(`${duty.path.pipes.map(tagOf).join(" > ")} -> ${duty.path.endTag}`).slice(0, 90) : "-"],
     ["dP traseu critic", `${(duty.dpCritical / 1000).toFixed(1)} kPa`],
     ["Presiune utila modul integrat", `${(duty.integratedHead / 1000).toFixed(0)} kPa`],
-    ["Sarcina pompei exterioare", `${(duty.net / 1000).toFixed(1)} kPa = ${duty.headM.toFixed(1)} mCA (cu marja: ${duty.margin.toFixed(1)} mCA)`],
+    ["Sarcina pompei exterioare (estimare preliminara)", `${(duty.net / 1000).toFixed(1)} kPa = ${duty.headM.toFixed(1)} mCA (cu marja: ${duty.margin.toFixed(1)} mCA)`],
     ["Debit total instalatie", `${duty.flow.toFixed(2)} m3/h`],
     ["Volum fluid conducte / echipamente", `${vol.pipes.toFixed(0)} l / ${vol.equipment.toFixed(0)} l`],
     ["Volum total instalatie", `${vol.total.toFixed(0)} l`],

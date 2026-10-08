@@ -1,6 +1,6 @@
 // Analiza rețelei: propagarea debitelor la teuri, traseul critic și punctul de funcționare al pompei.
 import { flowFromKw, type FluidProps } from "./fluids";
-import { computePipe } from "./hydraulics";
+import { circuitTotals, computePipe, type CalcWarning, type PipeResult } from "./hydraulics";
 import { getSymbol } from "./symbols";
 import type { PidNode, Scheme } from "./types";
 
@@ -145,6 +145,11 @@ export interface CriticalPath {
   dp: number; // Pa
   endTag: string; // consumatorul cel mai dezavantajat
   terminal: boolean;
+  /** Evaluare a traseului cu pierderea cumulată maximă — NU o soluție de rețea (fără continuitate/bilanț energetic). */
+  method: "critical-path-evaluation";
+  /** Pierderi pe conducte vs. echipamente/armături de-a lungul traseului critic. */
+  dpPipes: number;
+  dpComponents: number;
 }
 
 /** Traseul hidraulic cu pierderea cumulată maximă, de la sursă la un consumator. */
@@ -152,7 +157,7 @@ export function criticalPath(scheme: Scheme, fp: FluidProps): CriticalPath | nul
   const pipes = scheme.pipes.filter((p) => !p.disabled);
   const sources = scheme.nodes.filter((n) => getSymbol(n.type).source && !n.redundant).map((n) => n.id);
   if (!sources.length || !pipes.length) return null;
-  const dp = new Map(pipes.map((p) => [p.id, computePipe(p, scheme, fp).dpTotal] as const));
+  const res = new Map(pipes.map((p) => [p.id, computePipe(p, scheme, fp)] as const));
   const byNode = new Map<string, typeof pipes>();
   for (const p of pipes) {
     for (const id of [p.from.node, p.to.node]) {
@@ -170,11 +175,11 @@ export function criticalPath(scheme: Scheme, fp: FluidProps): CriticalPath | nul
     if (!used.length) return;
     const n = scheme.nodes.find((x) => x.id === nodeId);
     const term = !!n && !!getSymbol(n.type).terminal;
-    let acc = 0;
-    for (const id of used) acc += dp.get(id) ?? 0;
+    let acc = 0, accP = 0, accC = 0;
+    for (const id of used) { const r = res.get(id)!; acc += r.dpTotal; accP += r.dpPipe; accC += r.dpComp; }
     // un traseu care ajunge la un consumator are prioritate față de unul oarecare
     if (!best || (term && !best.terminal) || (term === best.terminal && acc > best.dp)) {
-      best = { pipes: [...used], dp: acc, endTag: n?.tag ?? "—", terminal: term };
+      best = { pipes: [...used], dp: acc, endTag: n?.tag ?? "—", terminal: term, method: "critical-path-evaluation", dpPipes: accP, dpComponents: accC };
     }
   };
 
@@ -210,6 +215,8 @@ export interface PumpDuty {
   flow: number; // m³/h
   path: CriticalPath | null;
   covered: boolean; // modulul integrat acoperă tot circuitul
+  /** Estimare preliminară a sarcinii; NU este punctul de funcționare (fără curbă de pompă). */
+  kind: "preliminary-duty-estimate";
 }
 
 /** Punctul de funcționare cerut: sarcina pompei pe traseul critic. */
@@ -227,5 +234,64 @@ export function pumpDuty(scheme: Scheme, fp: FluidProps): PumpDuty {
     dpCritical, integratedHead, net, headM, margin: headM * 1.1,
     flow: totalDemand(scheme, fp), path,
     covered: integratedHead > 0 && net === 0,
+    kind: "preliminary-duty-estimate",
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Evaluarea rețelei: statusuri și avertizări                          */
+/* ------------------------------------------------------------------ */
+
+export type NetworkStatus = "evaluated" | "incomplete" | "unresolved";
+
+export interface NetworkEvaluation {
+  /** (a)+(b) rezultate pe fiecare tronson */
+  pipes: Map<string, PipeResult>;
+  /** (c) traseul critic (evaluare, nu soluție de rețea) */
+  critical: CriticalPath | null;
+  /** (d) sumar pe circuit (inventar; NU Δp de sistem) */
+  circuits: ReturnType<typeof circuitTotals>;
+  /** Δp de sistem = Δp pe traseul critic (niciodată suma ramurilor paralele) */
+  systemDp: number;
+  flows: Map<string, FlowInfo>;
+  /** false: rețeaua NU este rezolvată prin continuitate + bilanț energetic (Sprint 2) */
+  networkSolved: false;
+  status: NetworkStatus;
+  warnings: CalcWarning[];
+}
+
+export function evaluateNetwork(scheme: Scheme, fp: FluidProps): NetworkEvaluation {
+  const active = scheme.pipes.filter((p) => !p.disabled);
+  const pipes = new Map(active.map((p) => [p.id, computePipe(p, scheme, fp)] as const));
+  const flows = propagateFlows(scheme, fp);
+  const critical = criticalPath(scheme, fp);
+  const warnings: CalcWarning[] = [];
+  if (fp.source === "engineering-estimate" && scheme.fluid !== "water") {
+    warnings.push({ code: "approx_fluid_props", message: "Proprietăți glicol din corelații aproximative (estimare inginerească, ±3–8%)" });
+  }
+  const seen = new Set<string>();
+  for (const r of pipes.values()) for (const w of r.warnings) {
+    const key = w.code + (w.target ?? "");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    warnings.push(w);
+  }
+  let unresolved = false;
+  for (const p of active) {
+    const fi = flows.get(p.id);
+    if (!fi) continue;
+    if (fi.ambiguous) {
+      unresolved = true;
+      warnings.push({ code: "flow_unresolved", message: `${p.tag}: debit nedeterminat (${fi.reason ?? "ambiguu"})`, target: p.id });
+    } else if (fi.flow > 0 && Math.abs(fi.flow - p.flow) > 0.01) {
+      warnings.push({ code: "manual_flow_auto_available", message: `${p.tag}: debit manual ${p.flow} m³/h ≠ dedus ${fi.flow} m³/h`, target: p.id });
+    }
+  }
+  const incomplete = [...pipes.values()].some((r) => r.status === "incomplete");
+  return {
+    pipes, critical, circuits: circuitTotals(scheme, fp), systemDp: critical?.dp ?? 0, flows,
+    networkSolved: false,
+    status: unresolved ? "unresolved" : incomplete ? "incomplete" : "evaluated",
+    warnings,
   };
 }

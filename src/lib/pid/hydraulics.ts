@@ -1,12 +1,40 @@
-import { fittingK, getMaterial, innerDiameterMm, type FittingId } from "./catalog";
+import { DN_LIST, fittingK, getMaterial, innerDiameterMm, type FittingId, type MaterialId } from "./catalog";
 import type { FluidProps } from "./fluids";
 import type { Pipe, Scheme } from "./types";
 import { getSymbol } from "./symbols";
 import { limitsFor } from "./velocity";
 
+/* ------------------------------------------------------------------ */
+/* Primitive pure (testabile, fără dependență de schemă)               */
+/* ------------------------------------------------------------------ */
+
+export const G = 9.81;
+export const RE_LAMINAR = 2300;
+export const RE_TURBULENT = 4000;
+
+/** Viteza medie [m/s] din debit [m³/h] și diametru interior [m]. */
+export function velocity(flowM3h: number, dM: number) {
+  if (dM <= 0) return 0;
+  return flowM3h / 3600 / ((Math.PI * dM * dM) / 4);
+}
+
+/** Numărul Reynolds. */
+export function reynolds(v: number, dM: number, nu: number) {
+  return nu > 0 ? (v * dM) / nu : 0;
+}
+
+export type Regime = "laminar" | "tranziție" | "turbulent";
+export function regimeOf(Re: number): Regime {
+  return Re < RE_LAMINAR ? "laminar" : Re < RE_TURBULENT ? "tranziție" : "turbulent";
+}
+
+/**
+ * Factor de frecare Darcy. Laminar: 64/Re. Turbulent: Colebrook-White (start Swamee-Jain).
+ * În zona de tranziție (2300–4000) se returnează valoarea Colebrook, dar rezultatul este
+ * marcat ca nesigur prin status/warning în computePipe.
+ */
 export function colebrook(Re: number, relRough: number) {
-  if (Re < 2300) return 64 / Math.max(Re, 1e-9);
-  // Swamee-Jain start, then iterate Colebrook-White
+  if (Re < RE_LAMINAR) return 64 / Math.max(Re, 1e-9);
   let f = 0.25 / Math.log10(relRough / 3.7 + 5.74 / Re ** 0.9) ** 2;
   for (let i = 0; i < 30; i++) {
     const rhs = -2 * Math.log10(relRough / 3.7 + 2.51 / (Re * Math.sqrt(f)));
@@ -17,28 +45,75 @@ export function colebrook(Re: number, relRough: number) {
   return f;
 }
 
-export interface PipeResult {
-  id: string;
-  tag: string;
-  d: number; // m
-  v: number; // m/s
-  Re: number;
-  regime: "laminar" | "tranziție" | "turbulent";
-  f: number;
-  R: number; // Pa/m
-  L: number; // m (inclusiv cote verticale)
-  dpLin: number; // Pa
-  Ksum: number;
-  dpLoc: number; // Pa
-  dpComp: number; // Pa (valves + equipment attributed)
-  dpStatic: number; // Pa (coloană de fluid pe urcări)
-  dpTotal: number;
-  velWarn: "low" | "high" | null;
+/** Presiune dinamică ρv²/2 [Pa]. */
+export const dynamicPressure = (rho: number, v: number) => (rho * v * v) / 2;
+
+/** Darcy–Weisbach: Δp = f·L/d·ρv²/2 [Pa]. */
+export function darcyDp(f: number, L: number, dM: number, rho: number, v: number) {
+  return dM > 0 ? (f * L / dM) * dynamicPressure(rho, v) : 0;
+}
+
+/** Pierdere locală Δp = ΣK·ρv²/2 [Pa]. */
+export function localLoss(Ksum: number, rho: number, v: number) {
+  return Ksum * dynamicPressure(rho, v);
+}
+
+/** Componentă statică ρ·g·Δz [Pa]. Pregătită pentru circuite deschise; nu se aplică în circuit închis. */
+export function staticDp(rho: number, dz: number) {
+  return rho * G * dz;
+}
+
+/** Căderea liniară R [Pa/m] pentru un material/DN/debit dat. */
+export function unitLoss(material: MaterialId, dn: number, flowM3h: number, fp: FluidProps) {
+  const d = innerDiameterMm(material, dn) / 1000;
+  const v = velocity(flowM3h, d);
+  const Re = reynolds(v, d, fp.nu);
+  const f = flowM3h > 0 ? colebrook(Re, getMaterial(material).roughness / 1000 / d) : 0;
+  return { d, v, Re, f, R: (f / d) * dynamicPressure(fp.rho, v) };
+}
+
+/**
+ * Selecția DN (criteriile actuale, neschimbate): cel mai mic DN cu v ≤ vMax și R ≤ Rmax.
+ * Dacă și viteza ≥ vMin este aleasă direct; altfel este acceptată tot prima treaptă validă.
+ * Dacă nicio treaptă nu respectă criteriile se întoarce cea mai mare treaptă a materialului.
+ */
+export function selectDn(material: MaterialId, flowM3h: number, fp: FluidProps, rMax: number, scheme?: Scheme) {
+  const [lo, hi] = getMaterial(material).dnRange;
+  const list = DN_LIST.filter((d) => d >= lo && d <= hi);
+  for (const d of list) {
+    const { v, R } = unitLoss(material, d, flowM3h, fp);
+    const [, vMax] = limitsFor(d, scheme);
+    if (v <= vMax && R <= rMax) return d;
+  }
+  return list[list.length - 1]!;
+}
+
+/* ------------------------------------------------------------------ */
+/* Geometrie traseu                                                    */
+/* ------------------------------------------------------------------ */
+
+type Pt = { x: number; y: number };
+
+/** Numărul de schimbări reale de direcție dintr-o polilinie (ignoră puncte coliniare/duplicate). */
+export function countDirectionChanges(pts: Pt[]) {
+  const dirs: { x: number; y: number }[] = [];
+  for (let i = 1; i < pts.length; i++) {
+    const dx = pts[i]!.x - pts[i - 1]!.x, dy = pts[i]!.y - pts[i - 1]!.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 0.5) continue; // segment degenerat
+    dirs.push({ x: dx / len, y: dy / len });
+  }
+  let n = 0;
+  for (let i = 1; i < dirs.length; i++) {
+    const cross = dirs[i - 1]!.x * dirs[i]!.y - dirs[i - 1]!.y * dirs[i]!.x;
+    const dot = dirs[i - 1]!.x * dirs[i]!.x + dirs[i - 1]!.y * dirs[i]!.y;
+    if (Math.abs(cross) > 1e-3 || dot < 0) n++;
+  }
+  return n;
 }
 
 export function autoBends(pipe: Pipe, scheme: Scheme): number {
-  const pts = pipeRoute(pipe, scheme);
-  return Math.max(0, pts.length - 2);
+  return countDirectionChanges(pipeRoute(pipe, scheme));
 }
 
 export function pipeRoute(pipe: Pipe, scheme: Scheme): { x: number; y: number }[] {
@@ -93,22 +168,65 @@ export function riserRise(pipe: Pipe, scheme: Scheme) {
   return sym.riser === "up" ? z : -z;
 }
 
+/* ------------------------------------------------------------------ */
+/* Rezultat pe tronson                                                  */
+/* ------------------------------------------------------------------ */
+
+export type CalcStatus = "ok" | "warning" | "incomplete";
+export type CalcWarningCode =
+  | "no_flow" | "transitional_re" | "missing_dn" | "missing_material"
+  | "equipment_no_dp" | "manual_flow_auto_available" | "velocity_low" | "velocity_high"
+  | "approx_fluid_props" | "flow_unresolved";
+
+export interface CalcWarning {
+  code: CalcWarningCode;
+  message: string;
+  target?: string | undefined; // id tronson / nod
+}
+
+export interface PipeResult {
+  id: string;
+  tag: string;
+  d: number; // m
+  v: number; // m/s
+  Re: number;
+  regime: Regime;
+  f: number;
+  R: number; // Pa/m
+  L: number; // m (inclusiv cote verticale)
+  dpLin: number; // Pa
+  Ksum: number;
+  dpLoc: number; // Pa
+  /** (a) pierderea proprie a conductei: liniară + locală (coturi, fitinguri) */
+  dpPipe: number;
+  /** (b) pierderea pe echipamentul/armătura de la capătul aval (K sau Δp fix) */
+  dpComp: number; // Pa
+  dpStatic: number; // Pa – aplicat (0 în circuit închis)
+  /** ρ·g·Δz al urcării/coborârii; doar informativ, NU este adăugat în circuit închis */
+  dpStaticPotential: number;
+  dpTotal: number; // dpPipe + dpComp
+  velWarn: "low" | "high" | null;
+  status: CalcStatus;
+  warnings: CalcWarning[];
+}
+
 export function computePipe(pipe: Pipe, scheme: Scheme, fp: FluidProps): PipeResult {
-  const mat = getMaterial(pipe.material);
-  const d = innerDiameterMm(pipe.material, pipe.dn) / 1000;
-  const A = (Math.PI * d * d) / 4;
-  const Q = pipe.flow / 3600;
-  const v = Q / A;
-  const Re = (v * d) / fp.nu;
-  const f = Q > 0 ? colebrook(Re, mat.roughness / 1000 / d) : 0;
-  const dyn = (fp.rho * v * v) / 2;
-  const R = (f / d) * dyn;
+  const warnings: CalcWarning[] = [];
+  const mat = pipe.material ? getMaterial(pipe.material) : undefined;
+  if (!mat) warnings.push({ code: "missing_material", message: "Material lipsă", target: pipe.id });
+  if (!pipe.dn) warnings.push({ code: "missing_dn", message: "DN lipsă", target: pipe.id });
+  const d = mat && pipe.dn ? innerDiameterMm(pipe.material, pipe.dn) / 1000 : 0;
+  const v = velocity(pipe.flow, d);
+  const Re = reynolds(v, d, fp.nu);
+  const f = pipe.flow > 0 && mat && d > 0 ? colebrook(Re, mat.roughness / 1000 / d) : 0;
+  const dyn = dynamicPressure(fp.rho, v);
+  const R = d > 0 ? (f / d) * dyn : 0;
   const rise = riserRise(pipe, scheme);
   const L = pipe.direct ? 0 : pipe.length + Math.abs(rise);
   const dpLin = R * L;
   let Ksum = pipe.direct ? 0 : autoBends(pipe, scheme) * fittingK("elbow90", pipe.joint);
   for (const [k, n] of Object.entries(pipe.fittings)) Ksum += (n ?? 0) * fittingK(k as FittingId, pipe.joint);
-  // components whose inlet ("a"/first port) is this pipe's destination contribute
+  // echipamentul / armătura de la capătul aval contribuie cu K sau Δp fix
   let Kcomp = 0;
   let dpFixed = 0;
   const target = scheme.nodes.find((n) => n.id === pipe.to.node);
@@ -116,17 +234,31 @@ export function computePipe(pipe: Pipe, scheme: Scheme, fp: FluidProps): PipeRes
     const sym = getSymbol(target.type);
     if (sym.K !== undefined) Kcomp += target.kOverride ?? sym.K;
     if (target.dpFixed) dpFixed += target.dpFixed * 1000;
+    if ((sym.terminal || sym.source) && !target.dpFixed && target.kOverride === undefined) {
+      warnings.push({ code: "equipment_no_dp", message: `${target.tag}: echipament fără Δp definit`, target: target.id });
+    }
   }
-  const dpLoc = Ksum * dyn;
+  const dpLoc = localLoss(Ksum, fp.rho, v);
   const dpComp = Kcomp * dyn + dpFixed;
-  const dpStatic = 0; // circuit închis: coloana statică se compensează
+  const dpStaticPotential = staticDp(fp.rho, rise);
+  const dpStatic = 0; // circuit închis: coloana statică tur/retur se compensează
   const [lo, hi] = velocityLimits(pipe.dn, scheme);
+  const Q = pipe.flow;
+  const velWarn = Q <= 0 ? null : v < lo ? "low" : v > hi ? "high" : null;
+  const regime = regimeOf(Re);
+  if (Q <= 0 && !pipe.direct) warnings.push({ code: "no_flow", message: "Debit lipsă / zero", target: pipe.id });
+  if (Q > 0 && regime === "tranziție") warnings.push({ code: "transitional_re", message: `Re=${Math.round(Re)} în zona de tranziție: factorul de frecare este incert`, target: pipe.id });
+  if (velWarn === "low") warnings.push({ code: "velocity_low", message: "Viteză sub intervalul recomandat", target: pipe.id });
+  if (velWarn === "high") warnings.push({ code: "velocity_high", message: "Viteză peste intervalul recomandat", target: pipe.id });
+  const incomplete = warnings.some((w) => w.code === "no_flow" || w.code === "missing_dn" || w.code === "missing_material");
+  const dpPipe = dpLin + dpLoc;
   return {
-    id: pipe.id, tag: pipe.tag, d, v, Re,
-    regime: Re < 2300 ? "laminar" : Re < 4000 ? "tranziție" : "turbulent",
-    f, R, L, dpLin, Ksum, dpLoc, dpComp, dpStatic,
-    dpTotal: dpLin + dpLoc + dpComp,
-    velWarn: Q <= 0 ? null : v < lo ? "low" : v > hi ? "high" : null,
+    id: pipe.id, tag: pipe.tag, d, v, Re, regime,
+    f, R, L, dpLin, Ksum, dpLoc, dpPipe, dpComp, dpStatic, dpStaticPotential,
+    dpTotal: dpPipe + dpComp,
+    velWarn,
+    status: incomplete ? "incomplete" : warnings.length ? "warning" : "ok",
+    warnings,
   };
 }
 
@@ -164,14 +296,25 @@ export function pipeCrossings(scheme: Scheme) {
   return out;
 }
 
-/** Sumar hidraulic al unui circuit complet. */
+export interface CircuitSummary {
+  L: number; // m
+  n: number; // tronsoane
+  /** Σ pierderi proprii conducte (informativ; NU este Δp de sistem în rețele ramificate) */
+  dpPipes: number;
+  /** Σ pierderi pe echipamente/armături (informativ) */
+  dpComponents: number;
+  /** Compatibilitate: Σ tuturor pierderilor din circuit. NU reprezintă Δp de sistem. */
+  dp: number;
+}
+
+/** Sumar pe circuit (inventar de pierderi). Δp de sistem se obține din traseul critic (network.ts). */
 export function circuitTotals(scheme: Scheme, fp: FluidProps) {
-  const map = new Map<string, { L: number; dp: number; n: number }>();
+  const map = new Map<string, CircuitSummary>();
   for (const p of scheme.pipes) {
     if (p.disabled) continue;
     const r = computePipe(p, scheme, fp);
-    const c = map.get(p.circuit) ?? { L: 0, dp: 0, n: 0 };
-    c.L += r.L; c.dp += r.dpTotal; c.n++;
+    const c = map.get(p.circuit) ?? { L: 0, dp: 0, n: 0, dpPipes: 0, dpComponents: 0 };
+    c.L += r.L; c.dp += r.dpTotal; c.dpPipes += r.dpPipe; c.dpComponents += r.dpComp; c.n++;
     map.set(p.circuit, c);
   }
   return map;

@@ -13,7 +13,12 @@ export interface FluidProps {
   nu: number; // m2/s
   cp: number; // J/(kg·K)
   freeze: number; // °C
+  /** Proveniența datelor: corelații aproximative acum; „tabulated” rezervat pentru date tabelate (Sprint 2). */
+  source: "engineering-estimate" | "tabulated";
 }
+
+/** Furnizor de proprietăți: permite înlocuirea ulterioară cu tabele fără schimbarea apelanților. */
+export type FluidPropsProvider = (fluid: FluidId, concentration: number, T: number) => FluidProps;
 
 
 function waterRho(T: number) {
@@ -45,7 +50,7 @@ export function fluidProps(fluid: FluidId, concentration: number, T: number): Fl
     mu = mw * Math.exp(c * (0.0358 + 0.00034 * (20 - T)));
     cp = cp * (1 - 0.004 * c);
   }
-  return { rho, mu, nu: mu / rho, cp, freeze: freezePoint(fluid, c) };
+  return { rho, mu, nu: mu / rho, cp, freeze: freezePoint(fluid, c), source: "engineering-estimate" };
 }
 
 /** Debit volumic [m³/h] dintr-o putere termică [kW] și un ΔT [K]. */

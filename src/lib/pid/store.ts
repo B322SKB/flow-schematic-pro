@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
-  CIRCUIT_PREFIX, DEFAULT_CIRCUIT_COLORS, DN_LIST, getMaterial, innerDiameterMm,
+  DEFAULT_CIRCUIT_COLORS,
   type CircuitId, type MaterialId, type JointType,
 } from "./catalog";
 import { getSymbol, syncCustomSymbols, type CustomSymbol, type SymbolType } from "./symbols";
@@ -11,7 +11,16 @@ import { planSizing, type SizingMode } from "./sizing";
 import { solveNetwork } from "./solver";
 import { flowFromKw, fluidProps } from "./fluids";
 import { propagateFlows, totalDemand } from "./network";
-import { limitsFor, maxR } from "./velocity";
+import { maxR } from "./velocity";
+import { emptyHistory, record, redo as redoTx, undo as undoTx, type HistoryState } from "./history";
+import { migrateScheme, SCHEMA_VERSION } from "./migrate";
+import { copySelectionData, pasteData, type ClipData } from "./clipboard";
+import { bulkEditNodes, bulkEditPipes, type BulkResult, type NodeBulkPatch, type PipeBulkPatch } from "./bulk";
+import { connectOpenEnd, validateConnection, type ConnectionCheck, type PortRef } from "./connect";
+import { layerForNew, nodeLocked, pipeLocked, type LayerId, type LayerState } from "./layers";
+import { BUILTIN_MODULES, insertModuleData } from "./modules";
+import { rerouteMany } from "./routing";
+import { retagSelection, tagAvailable, nextTag, pipeTag } from "./tags";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 export const PX_PER_M = 40;
@@ -32,7 +41,50 @@ export interface SavedModule {
   pipes: Pipe[];
 }
 
-interface State {
+export type VisualMode = "design" | "hydraulic" | "check" | "critical" | "mto";
+export type ViewRequest = { kind: "fit" } | { kind: "ids"; ids: string[] } | { kind: "selection" };
+
+export interface State {
+  /** Istoric tranzacțional (în memorie, per schemă activă) – sursă pentru Undo/Redo și Change Summary. */
+  history: HistoryState;
+  undo: () => boolean;
+  redo: () => boolean;
+  /** Grupează mai multe acțiuni într-o singură tranzacție (un singur pas de undo). */
+  transact: <T>(label: string, fn: () => T) => T;
+  beginTx: (label: string) => void;
+  endTx: () => void;
+  lastAction: string;
+  clip: ClipData | null;
+  pasteCount: number;
+  pasteOffset: { x: number; y: number };
+  setPasteOffset: (o: { x: number; y: number }) => void;
+  toggleSelect: (kind: "node" | "pipe", id: string) => void;
+  setSelection: (nodes: string[], pipes: string[]) => void;
+  selectAll: (what?: "all" | "pipes" | "equipment" | "valves") => void;
+  bulkPipes: (patch: PipeBulkPatch, ids?: string[]) => BulkResult;
+  bulkNodes: (patch: NodeBulkPatch, ids?: string[]) => BulkResult;
+  retagSelected: (prefix?: string, start?: number) => void;
+  renameTag: (id: string, tag: string) => boolean;
+  rerouteSelected: (ids?: string[]) => number;
+  connectPorts: (a: PortRef, b: PortRef) => ConnectionCheck;
+  smartConnectOpenEnd: (openNodeId: string, target: PortRef) => ConnectionCheck;
+  autoSizeSelected: (mode?: SizingMode) => { pipes: number; valves: number; skipped: number };
+  currentLayer: LayerId;
+  setCurrentLayer: (l: LayerId) => void;
+  setLayerState: (l: LayerId, p: Partial<LayerState>) => void;
+  visualMode: VisualMode;
+  setVisualMode: (m: VisualMode) => void;
+  viewRequest: (ViewRequest & { nonce: number }) | null;
+  requestView: (r: ViewRequest) => void;
+  findOpen: boolean;
+  commandOpen: boolean;
+  setFindOpen: (v: boolean) => void;
+  setCommandOpen: (v: boolean) => void;
+  recentCommands: string[];
+  lastCommand: string | null;
+  pushRecentCommand: (id: string, repeatable: boolean) => void;
+  inspectorFocus: number;
+  focusInspector: () => void;
   modules: SavedModule[];
   multiPipes: string[];
   clipboardIds: string[];
@@ -88,16 +140,6 @@ interface State {
   deleteProject: (id: string) => void;
   importProject: (raw: string) => string | null;
   reset: (empty?: boolean) => void;
-}
-
-function nextTag(prefix: string, existing: string[]) {
-  let n = 1;
-  const set = new Set(existing);
-  while (set.has(`${prefix}-${String(n).padStart(2, "0")}`)) n++;
-  return `${prefix}-${String(n).padStart(2, "0")}`;
-}
-function pipeTag(p: Pick<Pipe, "circuit" | "dn">, existing: string[]) {
-  return nextTag(`${CIRCUIT_PREFIX[p.circuit]}-DN${p.dn}`, existing);
 }
 
 /** Estimare inițială a lungimii din desen; ulterior lungimea este editată manual. */

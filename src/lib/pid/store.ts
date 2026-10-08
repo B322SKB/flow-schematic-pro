@@ -388,13 +388,13 @@ export const usePid = create<State>()(
         bulkPipes: (patch, ids) => {
           const target = ids ?? selection().pipes;
           const r = bulkEditPipes(get().scheme, target, patch);
-          if (r.changed.length) patchScheme(() => r.scheme, undefined, `Editare în masă (${r.changed.length} conducte)`);
+          if (r.changed.length) patchScheme(() => r.scheme, undefined, `Bulk edit (${r.changed.length} conducte)`);
           return r;
         },
         bulkNodes: (patch, ids) => {
           const target = ids ?? selection().nodes;
           const r = bulkEditNodes(get().scheme, target, patch);
-          if (r.changed.length) patchScheme(() => r.scheme, undefined, `Editare în masă (${r.changed.length} elemente)`);
+          if (r.changed.length) patchScheme(() => r.scheme, undefined, `Bulk edit (${r.changed.length} elemente)`);
           return r;
         },
         retagSelected: (prefix, start) => {

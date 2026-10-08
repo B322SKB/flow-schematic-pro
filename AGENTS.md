@@ -16,3 +16,6 @@
 - Hydraulic primitives in hydraulics.ts are pure and covered by vitest (src/lib/pid/*.test.ts) — keeps the engine verifiable.
 - Network flows/Δp come from src/lib/pid/solver.ts (Hardy-Cross per circuit); propagateFlows stays the deterministic radial path — loops must go through the solver, documented in docs/hydraulics-limitations.md.
 - DN sizing modes and candidate lists live in src/lib/pid/sizing.ts (planSizing re-solves the network after each pass); Engineering Check/project summary in src/lib/pid/checks.ts — UI only renders them.
+- Every schema mutation goes through store patchScheme (labelled) → history.ts transaction; batch ops use transact/beginTx/endTx — one source for Undo/Redo, Change Summary and audit.
+- Commands live in src/lib/pid/commands.ts (Command bar, shortcuts, Space-repeat, copilot share them); shortcuts mapping in shortcuts.ts with editable-target guard — avoids duplicated logic in components.
+- Pure productivity modules (clipboard, connect, routing, bulk, layers, tags, search, modules, migrate) stay UI-free and are covered by productivity.test.ts.

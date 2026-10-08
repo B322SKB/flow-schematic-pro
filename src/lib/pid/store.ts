@@ -288,7 +288,7 @@ export const usePid = create<State>()(
           if (next === before) return extra ?? {};
           const scheme = touch(next);
           const hist0 = st.history.schemeId === scheme.id ? st.history : emptyHistory(scheme.id);
-          const history = txDepth > 0 ? hist0 : record(hist0, label, before, scheme);
+          const history = txDepth > 0 ? hist0 : record(hist0, label, before, scheme, Date.now(), label.startsWith("Editare ") || label === "Mutare");
           return {
             scheme,
             projects: st.projects.map((p) => (p.id === scheme.id ? scheme : p)),
@@ -388,13 +388,13 @@ export const usePid = create<State>()(
         bulkPipes: (patch, ids) => {
           const target = ids ?? selection().pipes;
           const r = bulkEditPipes(get().scheme, target, patch);
-          if (r.changed.length) patchScheme(() => r.scheme, undefined, `Editare în masă (${r.changed.length} conducte)`);
+          if (r.changed.length) patchScheme(() => r.scheme, undefined, `Bulk edit (${r.changed.length} conducte)`);
           return r;
         },
         bulkNodes: (patch, ids) => {
           const target = ids ?? selection().nodes;
           const r = bulkEditNodes(get().scheme, target, patch);
-          if (r.changed.length) patchScheme(() => r.scheme, undefined, `Editare în masă (${r.changed.length} elemente)`);
+          if (r.changed.length) patchScheme(() => r.scheme, undefined, `Bulk edit (${r.changed.length} elemente)`);
           return r;
         },
         retagSelected: (prefix, start) => {

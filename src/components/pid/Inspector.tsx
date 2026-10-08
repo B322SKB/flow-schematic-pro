@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Trash2, RotateCw, ArrowLeftRight, Zap, Copy, Move, Lightbulb, Save } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Trash2, RotateCw, ArrowLeftRight, Zap, Copy, Move, Lightbulb, Lock } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { pipePower } from "@/lib/pid/power";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,9 @@ import { usePid } from "@/lib/pid/store";
 import { getSymbol } from "@/lib/pid/symbols";
 import type { Pipe } from "@/lib/pid/types";
 import { Field, Sel } from "./fields";
+import { BulkPanel } from "./BulkPanel";
+import { LAYERS, nodeLayer, nodeLocked, pipeLayer, pipeLocked, type LayerId } from "@/lib/pid/layers";
+import { engineeringCheck } from "@/lib/pid/checks";
 
 export function dnOptions(mat: MaterialId) {
   const m = getMaterial(mat);
@@ -36,30 +39,21 @@ export function normalizePipe(p: Pipe, patch: Partial<Pipe>): Partial<Pipe> {
 }
 
 export function Inspector() {
-  const { scheme, selected, multi, multiPipes, grid, setGrid, updateNode, updatePipe, removeSelected, flipPipe, pipeDefaults, setPipeDefaults, duplicateNodes, saveModule } = usePid();
-  const node = selected?.kind === "node" ? scheme.nodes.find((n) => n.id === selected.id) : undefined;
-  const pipe = selected?.kind === "pipe" ? scheme.pipes.find((p) => p.id === selected.id) : undefined;
+  const { scheme, selected, multi, multiPipes, grid, setGrid, updateNode, updatePipe, removeSelected, flipPipe, pipeDefaults, setPipeDefaults, duplicateNodes, bulkPipes, bulkNodes } = usePid();
+  const bulk = multi.length + multiPipes.length > 1;
+  const node = !bulk && selected?.kind === "node" ? scheme.nodes.find((n) => n.id === selected.id) : undefined;
+  const pipe = !bulk && selected?.kind === "pipe" ? scheme.pipes.find((p) => p.id === selected.id) : undefined;
+  const locked = (node && nodeLocked(scheme, node)) || (pipe && pipeLocked(scheme, pipe));
   const fp = fluidProps(scheme.fluid, scheme.concentration, scheme.temperature);
 
   return (
     <ScrollArea className="h-full border-l bg-sidebar">
       <div className="space-y-4 p-4">
-        {multi.length > 1 && (
-          <div className="space-y-2 rounded-md border border-primary/50 bg-primary/5 p-3">
-            <div className="text-sm font-semibold">{multi.length} elemente selectate</div>
-            <p className="text-xs text-muted-foreground">Trage oricare element pentru a muta grupul; săgețile mută fin (Shift = 10 px).</p>
-            <div className="flex gap-2">
-              <Button size="sm" className="flex-1 gap-1.5" onClick={() => duplicateNodes(multi)}><Copy className="h-4 w-4" />Duplică grupul</Button>
-              <Button size="sm" variant="destructive" onClick={removeSelected}><Trash2 className="h-4 w-4" /></Button>
-            </div>
-            <Button size="sm" variant="secondary" className="w-full gap-1.5"
-              onClick={() => { const nm = prompt("Numele modulului (reutilizabil în orice proiect):", "Modul nou"); if (nm) saveModule(nm, multi); }}>
-              <Save className="h-4 w-4" />Salvează ca modul reutilizabil
-            </Button>
-          </div>
-        )}
-        {multiPipes.length > 0 && <MultiPipePanel />}
-        {!node && !pipe && (
+        <BulkPanel />
+
+        {locked && <div className="flex items-center gap-1.5 rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-xs"><Lock className="h-3.5 w-3.5" />Strat blocat – doar vizualizare</div>}
+        {(node || pipe) && <ElementWarnings id={(node ?? pipe)!.id} />}
+        {!node && !pipe && !bulk && (
           <>
             <Field label="Pas grilă desen">
               <Sel<number> value={grid} onChange={setGrid} options={[1, 5, 10, 20].map((g) => ({ value: g, label: `${g} px` }))} />
@@ -79,7 +73,7 @@ export function Inspector() {
           </>
         )}
 
-        {node && multi.length <= 1 && (() => {
+        {node && (() => {
           const s = getSymbol(node.type);
           return (
             <>
@@ -94,7 +88,12 @@ export function Inspector() {
                   <Button size="icon" variant="destructive" onClick={removeSelected}><Trash2 className="h-4 w-4" /></Button>
                 </div>
               </div>
-              <Field label="Tag"><Input className="h-8 font-mono" value={node.tag} onChange={(e) => updateNode(node.id, { tag: e.target.value })} /></Field>
+              <Group title="Logic" />
+              <Field label="Tag"><TagField id={node.id} tag={node.tag} /></Field>
+              <Field label="Strat">
+                <Sel<LayerId> value={nodeLayer(node)} onChange={(v) => bulkNodes({ layer: v }, [node.id])}
+                  options={LAYERS.filter((l) => l.accepts.includes("node")).map((l) => ({ value: l.id, label: l.name }))} />
+              </Field>
               {(node.codeDx || node.codeDy) ? (
                 <Button size="sm" variant="ghost" className="h-7 gap-1.5 px-2 text-xs" onClick={() => updateNode(node.id, { codeDx: 0, codeDy: 0 })}>
                   <Move className="h-3.5 w-3.5" />Readu eticheta de cod la poziția inițială
@@ -132,6 +131,7 @@ export function Inspector() {
               )}
               {s.bomGroup === "Echipamente" && (
                 <>
+                  <Group title="Hydraulics" />
                   <Field label="Cădere presiune echipament (kPa)">
                     <Input type="number" className="h-8" value={node.dpFixed ?? 0} onChange={(e) => updateNode(node.id, { dpFixed: +e.target.value })} />
                   </Field>
@@ -182,6 +182,7 @@ export function Inspector() {
                       )}
                     </div>
                   )}
+                  <Group title="MTO" />
                   <Field label="Specificație suplimentară (BOM)">
                     <Input className="h-8" value={node.note ?? ""} placeholder="ex. R513A, 2 circuite, 400V"
                       onChange={(e) => updateNode(node.id, { note: e.target.value })} />
@@ -205,7 +206,7 @@ export function Inspector() {
                     <span className="h-2.5 w-2.5 rounded-full" style={{ background: circuitColor(scheme, pipe.circuit) }} />
                     Conductă DN{pipe.dn}
                   </div>
-                  <Input className="mt-1 h-8 font-mono" value={pipe.tag} onChange={(e) => updatePipe(pipe.id, { tag: e.target.value })} />
+                  <div className="mt-1"><TagField id={pipe.id} tag={pipe.tag} /></div>
                 </div>
                 <div className="flex gap-1">
                   <Button size="icon" variant="secondary" title="Inversează sensul de curgere" onClick={() => flipPipe(pipe.id)}><ArrowLeftRight className="h-4 w-4" /></Button>
@@ -226,8 +227,14 @@ export function Inspector() {
                   <Switch checked={!!pipe.disabled} onCheckedChange={(v) => updatePipe(pipe.id, { disabled: v })} />
                 </label>
               </div>
+              <Field label="Strat">
+                <Sel<LayerId> value={pipeLayer(pipe)} onChange={(v) => bulkPipes({ layer: v }, [pipe.id])}
+                  options={LAYERS.filter((l) => l.accepts.includes("pipe")).map((l) => ({ value: l.id, label: l.name }))} />
+              </Field>
+              <Group title="Hydraulics" />
               <PipeFields value={pipe} onChange={upd} />
               <DnAdvisor flow={pipe.flow} material={pipe.material} dn={pipe.dn} onPick={(dn) => upd({ dn })} />
+              <Group title="Geometry" />
               {!pipe.direct && <Field label="Lungime reală (m) — introdusă manual">
                 <Input type="number" step="0.1" min={0} className="h-8" value={pipe.length} onChange={(e) => updatePipe(pipe.id, { length: +e.target.value })} />
               </Field>}
@@ -257,6 +264,10 @@ export function Inspector() {
                   {!!pipe.points?.length && <Button size="sm" variant="outline" className="h-6 px-2 text-[11px]" onClick={() => updatePipe(pipe.id, { points: undefined })}>Resetează</Button>}
                 </div>
               </Field>
+              <Group title="MTO" />
+              <Field label="Izolație">
+                <Input className="h-8" value={pipe.insulation ?? ""} placeholder="ex. elastomer 19 mm" onChange={(e) => updatePipe(pipe.id, { insulation: e.target.value || undefined })} />
+              </Field>
               <div>
                 <div className="mb-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">Fitinguri suplimentare</div>
                 <div className="mb-2 text-xs text-muted-foreground">+ {bends} cot(uri) 90° deduse din traseu</div>
@@ -272,7 +283,7 @@ export function Inspector() {
               </div>
               <div className="rounded-md border bg-card p-3 font-mono text-xs">
                 <div className="mb-2 flex items-center justify-between font-sans text-[11px] uppercase tracking-wider text-muted-foreground">
-                  Rezultat hidraulic
+                  Rezultat hidraulic · calculat (read-only)
                   {r.velWarn && <Badge variant={r.velWarn === "high" ? "destructive" : "secondary"}>{r.velWarn === "high" ? "viteză mare" : "viteză mică"}</Badge>}
                 </div>
                 <Row k="Di" v={`${innerDiameterMm(pipe.material, pipe.dn).toFixed(1)} mm`} />
@@ -285,6 +296,7 @@ export function Inspector() {
                 <Row k="ΣK / Δp local" v={`${r.Ksum.toFixed(2)} / ${fmtP(r.dpLoc, "kPa")} kPa`} />
                 <Row k="Δp elemente" v={`${fmtP(r.dpComp, "kPa")} kPa`} />
                 <Row k="Δp total" v={`${fmtP(r.dpTotal, "kPa")} kPa`} strong />
+                <p className="mt-1 font-sans text-[10px] text-muted-foreground">Sursa: Darcy–Weisbach + Colebrook (64/Re laminar), ΣK·ρv²/2, la debitul introdus ({pipe.flow} m³/h). Debitele din rețea: solverul Hardy-Cross din Hidraulică.</p>
               </div>
             </>
           );
@@ -360,36 +372,47 @@ function DnAdvisor({ flow, material, dn, onPick }: { flow: number; material: Mat
   );
 }
 
+function Group({ title }: { title: string }) {
+  return <div className="border-b pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">{title}</div>;
+}
 
-function MultiPipePanel() {
-  const { scheme, multiPipes, updatePipe, removeSelected } = usePid();
-  const [dn, setDn] = useState<number | "">("");
-  const [circuit, setCircuit] = useState<CircuitId | "">("");
-  const mats = [...new Set(multiPipes.map((id) => scheme.pipes.find((p) => p.id === id)?.material).filter(Boolean))] as MaterialId[];
-  const dnOpts = mats.length === 1 ? dnOptions(mats[0]!) : DN_LIST.map((d) => ({ value: d, label: `DN${d}` }));
-  const apply = () => {
-    for (const id of multiPipes) {
-      const patch: Partial<Pipe> = {};
-      if (dn !== "") patch.dn = dn as number;
-      if (circuit !== "") patch.circuit = circuit as CircuitId;
-      if (Object.keys(patch).length) updatePipe(id, patch);
-    }
+/** Tag cu salvare la Enter/blur și protecție la duplicate; primește focus la dublu-click pe obiect. */
+function TagField({ id, tag }: { id: string; tag: string }) {
+  const renameTag = usePid((s) => s.renameTag);
+  const focusN = usePid((s) => s.inspectorFocus);
+  const [v, setV] = useState(tag);
+  const [err, setErr] = useState("");
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => { setV(tag); setErr(""); }, [tag, id]);
+  useEffect(() => { if (focusN) { ref.current?.focus(); ref.current?.select(); } }, [focusN]);
+  const commit = () => {
+    if (v === tag) return;
+    if (!renameTag(id, v)) { setErr(v.trim() ? `Tag-ul „${v}” există deja` : "Tag gol"); setV(tag); }
+    else setErr("");
   };
   return (
-    <div className="space-y-2 rounded-md border border-primary/50 bg-primary/5 p-3">
-      <div className="text-sm font-semibold">{multiPipes.length} conducte selectate</div>
-      <p className="text-xs text-muted-foreground">Se aplică tuturor conductelor selectate; reducțiile la joncțiuni apar automat în deviz.</p>
-      <Field label="DN comun">
-        <Sel<number | ""> value={dn} onChange={(v) => setDn(v as number | "")} options={[{ value: "" as never, label: "— nu se modifică —" }, ...dnOpts]} />
-      </Field>
-      <Field label="Tip circuit">
-        <Sel<CircuitId | ""> value={circuit} onChange={(v) => setCircuit(v as CircuitId | "")}
-          options={[{ value: "" as never, label: "— nu se modifică —" }, ...CIRCUIT_IDS.map((c) => ({ value: c, label: CIRCUITS[c].name }))]} />
-      </Field>
-      <div className="flex gap-2">
-        <Button size="sm" className="flex-1" onClick={apply}>Aplică</Button>
-        <Button size="sm" variant="destructive" onClick={removeSelected}><Trash2 className="h-4 w-4" /></Button>
+    <div>
+      <Input ref={ref} className={`h-8 font-mono ${err ? "border-destructive" : ""}`} value={v} onChange={(e) => setV(e.target.value)}
+        onBlur={commit} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } if (e.key === "Escape") setV(tag); }} />
+      {err && <p className="mt-0.5 text-[11px] text-destructive">{err}</p>}
+    </div>
+  );
+}
+
+/** Avertizările Engineering Check pentru obiectul selectat, cu salt la problemă. */
+function ElementWarnings({ id }: { id: string }) {
+  const scheme = usePid((s) => s.scheme);
+  const requestView = usePid((s) => s.requestView);
+  const fp = fluidProps(scheme.fluid, scheme.concentration, scheme.temperature);
+  const el = useMemo(() => engineeringCheck(scheme, fp).elements.find((e) => e.id === id), [scheme, fp, id]);
+  const items = el?.items.filter((i) => i.level !== "ok") ?? [];
+  if (!items.length) return null;
+  return (
+    <div className="space-y-1 rounded-md border border-warning/50 bg-warning/10 p-2 text-xs">
+      <div className="flex items-center justify-between font-medium">Engineering Check
+        <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={() => requestView({ kind: "ids", ids: [id] })}>Focus</Button>
       </div>
+      {items.map((i, k) => <div key={k}>• {i.label}: {i.message}{i.deviation ? ` (${Math.abs(i.deviation).toFixed(0)}%)` : ""}</div>)}
     </div>
   );
 }

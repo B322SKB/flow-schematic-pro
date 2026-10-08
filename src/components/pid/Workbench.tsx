@@ -56,6 +56,20 @@ export function UndoRedo() {
   );
 }
 
+const fold = (x: string) => x.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+/** Filtru predictibil: toate cuvintele căutate trebuie să apară (substring), prefixul cântărește mai mult. */
+function cmdFilter(value: string, search: string) {
+  const v = fold(value), words = fold(search).split(/\s+/).filter(Boolean);
+  if (!words.length) return 1;
+  let score = 0;
+  for (const w of words) {
+    const i = v.indexOf(w);
+    if (i < 0) return 0;
+    score += i === 0 || v[i - 1] === " " ? 2 : 1;
+  }
+  return score / (words.length * 2);
+}
+
 export function CommandBar({ onEditorNeeded }: { onEditorNeeded?: () => void }) {
   const open = usePid((s) => s.commandOpen);
   const setOpen = usePid((s) => s.setCommandOpen);
@@ -66,7 +80,7 @@ export function CommandBar({ onEditorNeeded }: { onEditorNeeded?: () => void }) 
   const exec = (id: string) => { setOpen(false); setQ(""); onEditorNeeded?.(); setTimeout(() => runCommand(id, commandCtx), 0); };
   const groups = [...new Set(COMMANDS.map((c) => c.group))];
   return (
-    <CommandDialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setQ(""); }}>
+    <CommandDialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setQ(""); }} commandProps={{ filter: cmdFilter }}>
       <CommandInput placeholder="Comandă sau obiect (ex. Zoom Fit, CCU-01, DN100)…" value={q} onValueChange={setQ} />
       <CommandList>
         <CommandEmpty>Nicio comandă sau obiect.</CommandEmpty>

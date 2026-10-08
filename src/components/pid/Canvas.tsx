@@ -585,13 +585,13 @@ export function PidCanvas({ svgRef: outerRef, readOnly = false, showTags = false
             </button>
           ))}
           <span className="opacity-40">|</span>
-          <span title="Obiecte selectate">SEL {multi.length + multiPipes.length || (selected ? 1 : 0)}</span>
+          <span className="whitespace-nowrap" title="Obiecte selectate">SEL {multi.length + multiPipes.length || (selected ? 1 : 0)}</span>
           <span className="opacity-40">|</span>
-          <span title="Strat curent – obiectele noi intră aici">LAYER {LAYERS.find((l) => l.id === currentLayer)?.name}</span>
+          <span className="whitespace-nowrap" title={`Strat curent: ${LAYERS.find((l) => l.id === currentLayer)?.name} – obiectele noi intră aici`}>LAYER {currentLayer.toUpperCase()}</span>
           <span className="opacity-40">|</span>
-          <span title="Mod vizual">MODE {visualMode.toUpperCase()}</span>
+          <span className="whitespace-nowrap" title="Mod vizual">MODE {visualMode.toUpperCase()}</span>
           <span className="opacity-40">|</span>
-          <span>m · kPa · m³/h</span>
+          <span className="whitespace-nowrap">m · kPa · m³/h</span>
           {scheme.nodes.some((n) => nodeLocked(scheme, n)) && <Lock className="h-3 w-3" />}
           <span className="ml-auto truncate pl-2">
             {pending ? "Click pe un alt port pentru a finaliza conducta · Esc anulează"

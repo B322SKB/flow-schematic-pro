@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { FilePlus2, RefreshCcw, Sigma, Tags, Workflow, Gauge, ClipboardList, FileText, Image as ImageIcon, FileCode2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,6 +18,8 @@ import { fluidProps } from "@/lib/pid/fluids";
 import { computePipe } from "@/lib/pid/hydraulics";
 import { powerTotals } from "@/lib/pid/power";
 import { exportSchemeDxf, exportSchemePdf, exportSchemePng, exportSchemeSvg, schemeSvgString } from "@/lib/pid/export";
+import { ChangesPopover, CommandBar, CopilotPopover, Dashboard, FindPanel, LayersPopover, ModeSwitch, ShortcutsPopover, UndoRedo, useGlobalShortcuts } from "@/components/pid/Workbench";
+import { Command as CommandIcon } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -55,6 +57,11 @@ function App() {
   const [mode, setMode] = useState<"normal" | "clean" | "coded">("normal");
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
+  const [tab, setTab] = useState("editor");
+  const toEditor = useCallback(() => setTab("editor"), []);
+  useGlobalShortcuts(toEditor);
+  const inspectorFocus = usePid((s) => s.inspectorFocus);
+  useEffect(() => { if (inspectorFocus) setRightOpen(true); }, [inspectorFocus]);
   const wait = () => new Promise((r) => setTimeout(r, 120));
   const run = async (fn: () => unknown, label: string, m: "clean" | "coded" = "coded") => {
     usePid.getState().select(null);
@@ -73,7 +80,8 @@ function App() {
   };
 
   return (
-    <Tabs defaultValue="editor" className="flex h-screen flex-col gap-0">
+    <Tabs value={tab} onValueChange={setTab} className="flex h-screen flex-col gap-0">
+      <CommandBar onEditorNeeded={toEditor} />
       <header className="flex flex-wrap items-center gap-3 border-b bg-card px-4 py-2">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded bg-primary font-mono text-xs font-bold text-primary-foreground">P&ID</div>
@@ -90,8 +98,8 @@ function App() {
           <div className="flex gap-4">
             <span>{scheme.nodes.length} elemente · {scheme.pipes.length} segmente · {stats.lengthTotal.toFixed(1)} m</span>
             <span title="Proiectul se salvează automat în acest browser la fiecare modificare">salvat {new Date(scheme.updatedAt).toLocaleTimeString("ro-RO", { hour: "2-digit", minute: "2-digit" })}</span>
-            <span className="text-primary">Δp total {stats.dpTotal.toFixed(1)} kPa</span>
           </div>
+          <Dashboard />
           <div className="flex gap-3">
             <span title="Suma puterilor sensibile ale echipamentelor terminale active și redundante">P sens. instalată <b className="text-foreground">{pw.sensInstalled.toFixed(1)} kW</b></span>
             <span title="Suma puterilor sensibile ale echipamentelor terminale active">P sens. <b className="text-foreground">{pw.sensActive.toFixed(1)} kW</b></span>
@@ -102,6 +110,12 @@ function App() {
           </div>
         </div>
         <div className="flex gap-1">
+          <UndoRedo />
+          <Button size="sm" variant="ghost" title="Command bar (Ctrl+K)" aria-label="Command bar" onClick={() => usePid.getState().setCommandOpen(true)}><CommandIcon className="h-4 w-4" /></Button>
+          <LayersPopover />
+          <ChangesPopover />
+          <CopilotPopover />
+          <ShortcutsPopover />
           <ProjectsDialog />
           <ColorsDialog />
           <DropdownMenu>
@@ -143,6 +157,8 @@ function App() {
           <div className={leftOpen ? "min-w-0 overflow-hidden" : "hidden"}><Palette /></div>
           <div className="relative min-w-0">
             <PidCanvas svgRef={svgRef} showTags={mode === "coded"} hideCodes={mode === "clean"} />
+            <FindPanel />
+            <div className="absolute bottom-10 left-1/2 -translate-x-1/2 rounded-md bg-card/90 backdrop-blur"><ModeSwitch /></div>
             <div className="pointer-events-none absolute left-3 top-3 flex max-w-[60%] flex-wrap gap-2 rounded-md border bg-card/90 px-3 py-1.5 text-[11px] backdrop-blur">
               {CIRCUIT_IDS.map((c) => (
                 <span key={c} className="flex items-center gap-1"><span className="h-0.5 w-4" style={{ background: circuitColor(scheme, c) }} />{CIRCUITS[c].name}</span>

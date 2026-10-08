@@ -288,7 +288,7 @@ export const usePid = create<State>()(
           if (next === before) return extra ?? {};
           const scheme = touch(next);
           const hist0 = st.history.schemeId === scheme.id ? st.history : emptyHistory(scheme.id);
-          const history = txDepth > 0 ? hist0 : record(hist0, label, before, scheme);
+          const history = txDepth > 0 ? hist0 : record(hist0, label, before, scheme, Date.now(), label.startsWith("Editare ") || label === "Mutare");
           return {
             scheme,
             projects: st.projects.map((p) => (p.id === scheme.id ? scheme : p)),

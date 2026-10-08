@@ -69,9 +69,22 @@ export function diffSchemes(a: Scheme, b: Scheme): ChangeSummary {
 export const isEmptySummary = (c: ChangeSummary) =>
   !c.created.length && !c.deleted.length && !c.modified.length && !c.resized.length && !c.rerouted.length && !c.settings;
 
-/** Înregistrează o tranzacție; golește stiva de redo; limitează istoricul. */
-export function record(h: HistoryState, label: string, before: Scheme, after: Scheme, now = Date.now()): HistoryState {
+export const COALESCE_MS = 1000;
+
+/**
+ * Înregistrează o tranzacție; golește stiva de redo; limitează istoricul.
+ * `coalesce`: editări repetate cu aceeași etichetă (tastare într-un câmp, nudge cu săgeți) în
+ * fereastra COALESCE_MS se contopesc într-o singură tranzacție.
+ */
+export function record(h: HistoryState, label: string, before: Scheme, after: Scheme, now = Date.now(), coalesce = false): HistoryState {
   if (before === after) return h;
+  const last = h.past[h.past.length - 1];
+  if (coalesce && last && !h.future.length && last.label === label && now - last.at < COALESCE_MS && last.after === before) {
+    const summary = diffSchemes(last.before, after);
+    const tx: Transaction = { ...last, after, at: now, summary };
+    const log = h.log.map((l) => (l.id === last.id ? { ...l, at: now, summary } : l));
+    return { ...h, past: [...h.past.slice(0, -1), tx], log };
+  }
   const summary = diffSchemes(before, after);
   if (isEmptySummary(summary)) return h;
   const id = h.seq + 1;

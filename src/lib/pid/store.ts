@@ -488,27 +488,7 @@ export const usePid = create<State>()(
           const next = s.pipes.map((p) => {
             if (p.direct) return p;
             if (p.flow <= 0) { skipped++; return p; }
-            const [lo, hi] = getMaterial(p.material).dnRange;
-            const list = DN_LIST.filter((d) => d >= lo && d <= hi);
-            const mat = getMaterial(p.material);
-            let chosen: number | null = null;
-            let fallback = list[list.length - 1]!;
-            for (const d of list) {
-              const di = innerDiameterMm(p.material, d) / 1000;
-              const v = p.flow / 3600 / ((Math.PI * di * di) / 4);
-              const Re = (v * di) / fp.nu;
-              const f = colebrook(Re, mat.roughness / 1000 / di);
-              const R = (f / di) * (fp.rho * v * v) / 2;
-              const [vMin, vMax] = limitsFor(d, s);
-              if (v <= vMax && R <= rMax) {
-                fallback = d;
-                if (v >= vMin) { chosen = d; break; }
-                // viteză prea mică: se acceptă doar dacă nicio treaptă mai mică nu merge
-                if (chosen === null) chosen = d;
-                break;
-              }
-            }
-            const pick = chosen ?? fallback;
+            const pick = selectDn(p.material, p.flow, fp, rMax, s);
             if (pick !== p.dn) {
               pipes++;
               dnMap.set(p.id, pick);

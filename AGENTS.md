@@ -14,3 +14,4 @@
 - Power totals (sensible/required/supplied) live in src/lib/pid/power.ts — one source for header, PDF and inspector.
 - Hydraulic system Δp is taken from the critical path (network.ts evaluateNetwork), never the sum of branches — circuitTotals is an inventory only.
 - Hydraulic primitives in hydraulics.ts are pure and covered by vitest (src/lib/pid/*.test.ts) — keeps the engine verifiable.
+- Network flows/Δp come from src/lib/pid/solver.ts (Hardy-Cross per circuit); propagateFlows stays the deterministic radial path — loops must go through the solver, documented in docs/hydraulics-limitations.md.

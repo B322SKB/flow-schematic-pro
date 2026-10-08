@@ -481,57 +481,44 @@ export const usePid = create<State>()(
           patchScheme((s) => ({
             ...s,
             velocityLimits: { ...(s.velocityLimits ?? {}), [dn]: [min, max] as [number, number] },
-          })),
-        resetVelocityLimits: () => patchScheme((s) => ({ ...s, velocityLimits: undefined })),
+          }), undefined, `Viteze DN${dn}`),
+        resetVelocityLimits: () => patchScheme((s) => ({ ...s, velocityLimits: undefined }), undefined, "Viteze implicite"),
         setGrid: (g) => set({ grid: g }),
         setMulti: (ids) => set({ multi: ids }),
         setMultiPipes: (ids) => set({ multiPipes: ids }),
         copySelection: () => {
-          const st = get();
-          const ids = st.multi.length ? st.multi : st.selected?.kind === "node" ? [st.selected.id] : [];
-          if (ids.length) set({ clipboardIds: ids });
+          const { nodes, pipes } = selection();
+          const clip = copySelectionData(get().scheme, nodes, pipes);
+          if (clip) set({ clip, clipboardIds: nodes, pasteCount: 0 });
         },
         pasteClipboard: () => {
           const st = get();
-          if (st.clipboardIds.length) st.duplicateNodes(st.clipboardIds);
+          if (!st.clip) return;
+          const k = st.pasteCount + 1;
+          const r = pasteData(st.scheme, st.clip, { x: st.pasteOffset.x * k, y: st.pasteOffset.y * k });
+          patchScheme(() => r.scheme, {
+            pasteCount: k, multi: r.nodeIds, multiPipes: r.pipeIds,
+            selected: r.nodeIds[0] ? { kind: "node", id: r.nodeIds[0] } : r.pipeIds[0] ? { kind: "pipe", id: r.pipeIds[0] } : null,
+          }, `Lipire (${r.nodeIds.length} elemente, ${r.pipeIds.length} conducte)`);
         },
         addGuide: (dir, pos) =>
-          patchScheme((s) => ({ ...s, guides: [...(s.guides ?? []), { id: uid(), dir, pos: Math.round(pos) }] })),
-        clearGuides: () => patchScheme((s) => ({ ...s, guides: [] })),
+          patchScheme((s) => ({ ...s, guides: [...(s.guides ?? []), { id: uid(), dir, pos: Math.round(pos) }] }), undefined, "Ghidaj nou"),
+        clearGuides: () => patchScheme((s) => ({ ...s, guides: [] }), undefined, "Ștergere ghidaje"),
         moveNodes: (ids, dx, dy) => {
           const set_ = new Set(ids);
-          patchScheme((s) => ({ ...s, nodes: s.nodes.map((n) => (set_.has(n.id) ? { ...n, x: n.x + dx, y: n.y + dy } : n)) }));
+          patchScheme((s) => ({ ...s, nodes: s.nodes.map((n) => (set_.has(n.id) && !nodeLocked(s, n) ? { ...n, x: n.x + dx, y: n.y + dy } : n)) }), undefined, "Mutare");
         },
         duplicateNodes: (ids) => {
           const st = get();
-          const src = new Set(ids);
-          const map = new Map<string, string>();
-          const tags = st.scheme.nodes.map((n) => n.tag);
-          const nodes: PidNode[] = [];
-          for (const n of st.scheme.nodes) {
-            if (!src.has(n.id)) continue;
-            const id = uid();
-            map.set(n.id, id);
-            const tag = nextTag(getSymbol(n.type).prefix, tags);
-            tags.push(tag);
-            nodes.push({ ...structuredClone(n), id, tag, y: n.y + 120 });
-          }
-          const ptags = st.scheme.pipes.map((p) => p.tag);
-          const pipes: Pipe[] = [];
-          for (const p of st.scheme.pipes) {
-            const a = map.get(p.from.node), b = map.get(p.to.node);
-            if (!a || !b) continue;
-            const np: Pipe = { ...structuredClone(p), id: uid(), from: { ...p.from, node: a }, to: { ...p.to, node: b } };
-            np.tag = pipeTag(np, ptags);
-            ptags.push(np.tag);
-            pipes.push(np);
-          }
-          patchScheme((s) => ({ ...s, nodes: [...s.nodes, ...nodes], pipes: [...s.pipes, ...pipes] }),
-            { multi: nodes.map((n) => n.id), selected: nodes[0] ? { kind: "node", id: nodes[0].id } : null });
+          const clip = copySelectionData(st.scheme, ids, []);
+          if (!clip) return;
+          const r = pasteData(st.scheme, clip, { x: 0, y: 120 });
+          patchScheme(() => r.scheme, { multi: r.nodeIds, multiPipes: r.pipeIds, selected: r.nodeIds[0] ? { kind: "node", id: r.nodeIds[0] } : null },
+            `Duplicare (${r.nodeIds.length})`);
         },
         pipeDefaults: { dn: 80, material: "steel_carbon", joint: "grooved", circuit: "supply", flow: 20, length: 5 },
 
-        setScheme: (p) => patchScheme((s) => ({ ...s, ...p })),
+        setScheme: (p) => patchScheme((s) => ({ ...s, ...p }), undefined, `Setări schemă (${Object.keys(p).join(", ")})`),
 
         addNode: (type, x, y) => {
           const st = get();
@@ -541,14 +528,16 @@ export const usePid = create<State>()(
             tag: nextTag(sym.prefix, st.scheme.nodes.map((n) => n.tag)), dpFixed: sym.dpDefault,
             ...(sym.riser ? { z: 1 } : {}),
           };
-          patchScheme((s) => ({ ...s, nodes: [...s.nodes, node] }), { selected: { kind: "node", id: node.id } });
+          const layer = layerForNew("node", st.currentLayer, node);
+          if (layer) node.layer = layer;
+          patchScheme((s) => ({ ...s, nodes: [...s.nodes, node] }), { selected: { kind: "node", id: node.id }, multi: [], multiPipes: [] }, `Adăugare ${node.tag}`);
         },
 
         updateNode: (id, p) =>
           patchScheme((s) => ({
             ...s,
             nodes: s.nodes.map((n) => {
-              if (n.id !== id) return n;
+              if (n.id !== id || nodeLocked(s, n)) return n;
               const next = { ...n, ...p };
               if (next.kw && next.deltaT) {
                 const fp = fluidProps(s.fluid, s.concentration, s.temperature);
@@ -556,7 +545,7 @@ export const usePid = create<State>()(
               }
               return next;
             }),
-          })),
+          }), undefined, `Editare ${get().scheme.nodes.find((n) => n.id === id)?.tag ?? "element"}`),
 
         addPipe: (from, to, opts) => {
           const st = get();
@@ -573,14 +562,16 @@ export const usePid = create<State>()(
           pipe.tag = pipeTag(pipe, st.scheme.pipes.map((p) => p.tag));
           pipe.length = opts?.direct ? 0 : routeLen(pipe, st.scheme);
           if (opts?.direct) pipe.direct = true;
-          patchScheme((s) => ({ ...s, pipes: [...s.pipes, pipe] }), { selected: { kind: "pipe", id: pipe.id } });
+          const layer = layerForNew("pipe", st.currentLayer);
+          if (layer) pipe.layer = layer;
+          patchScheme((s) => ({ ...s, pipes: [...s.pipes, pipe] }), { selected: { kind: "pipe", id: pipe.id }, multi: [], multiPipes: [] }, `Conductă ${pipe.tag}`);
         },
 
         updatePipe: (id, p) =>
           patchScheme((s) => ({
             ...s,
             pipes: s.pipes.map((x) => {
-              if (x.id !== id) return x;
+              if (x.id !== id || pipeLocked(s, x)) return x;
               const next = { ...x, ...p };
               if (next.flowMode === "kw") {
                 const fp = fluidProps(s.fluid, s.concentration, s.temperature);
@@ -588,7 +579,7 @@ export const usePid = create<State>()(
               }
               return next;
             }),
-          })),
+          }), undefined, `Editare ${get().scheme.pipes.find((x) => x.id === id)?.tag ?? "conductă"}`),
 
         insertOnPipe: (pipeId, type, x, y) => {
           const st = get();
@@ -630,7 +621,7 @@ export const usePid = create<State>()(
           const p2: Pipe = { ...pipe, id: uid(), from: { node: node.id, port: pb.id }, length: Math.round((pipe.length - L1) * 10) / 10, fittings: {}, points: undefined };
           p2.tag = pipeTag(p2, s0.pipes.map((p) => p.tag));
           patchScheme((s) => ({ ...s, nodes: [...s.nodes, node], pipes: s.pipes.flatMap((p) => (p.id === pipeId ? [p1, p2] : [p])) }),
-            { selected: { kind: "node", id: node.id } });
+            { selected: { kind: "node", id: node.id } }, `Inserare ${node.tag} pe ${pipe.tag}`);
           return true;
         },
 
@@ -651,7 +642,7 @@ export const usePid = create<State>()(
           };
           pipe.tag = pipeTag(pipe, st.scheme.pipes.map((p) => p.tag));
           pipe.length = routeLen(pipe, { ...st.scheme, nodes: [...st.scheme.nodes, node] });
-          patchScheme((s) => ({ ...s, nodes: [...s.nodes, node], pipes: [...s.pipes, pipe] }), { selected: { kind: "pipe", id: pipe.id } });
+          patchScheme((s) => ({ ...s, nodes: [...s.nodes, node], pipes: [...s.pipes, pipe] }), { selected: { kind: "pipe", id: pipe.id } }, `Conductă ${pipe.tag} (capăt liber)`);
         },
 
         /** Inserează un element existent (cu ≥2 porturi libere aliniate) într-o conductă apropiată, tăind traseul. */
@@ -698,7 +689,7 @@ export const usePid = create<State>()(
             ...s,
             nodes: s.nodes.map((x) => (x.id === n.id ? { ...x, x: best.x, y: best.y, rotation } : x)),
             pipes: s.pipes.flatMap((p) => (p.id === best.pipe.id ? [p1, p2] : [p])),
-          }), { selected: { kind: "node", id: n.id } });
+          }), { selected: { kind: "node", id: n.id } }, `Inserare ${n.tag} pe ${best.pipe.tag}`);
           return true;
         },
 
@@ -742,7 +733,7 @@ export const usePid = create<State>()(
               pipes: s.pipes.filter((p) => dnMap.has(p.id)).map((p) => ({ id: p.id, dn: p.dn, tag: p.tag })),
               nodes: s.nodes.filter((n, i) => nodes[i] !== n).map((n) => ({ id: n.id, dn: n.dn })),
             };
-            patchScheme((s2) => ({ ...s2, pipes: next, nodes }), { sizingUndo: undo });
+            patchScheme((s2) => ({ ...s2, pipes: next, nodes }), { sizingUndo: undo }, `Auto-size (${mode}) – ${pipes} conducte`);
           }
           return { pipes, valves, skipped };
         },
@@ -753,7 +744,7 @@ export const usePid = create<State>()(
           if (!p || p.dn === dn) return;
           const undo = { schemeId: s.id, pipes: [{ id: p.id, dn: p.dn, tag: p.tag }], nodes: [] };
           const tags = s.pipes.filter((x) => x.id !== pipeId).map((x) => x.tag);
-          patchScheme((s2) => ({ ...s2, pipes: s2.pipes.map((x) => (x.id === pipeId ? { ...x, dn, tag: pipeTag({ ...x, dn }, tags) } : x)) }), { sizingUndo: undo });
+          patchScheme((s2) => ({ ...s2, pipes: s2.pipes.map((x) => (x.id === pipeId ? { ...x, dn, tag: pipeTag({ ...x, dn }, tags) } : x)) }), { sizingUndo: undo }, `DN${dn} pe ${p.tag}`);
         },
 
         undoSizing: () => {
@@ -767,7 +758,7 @@ export const usePid = create<State>()(
             ...s2,
             pipes: s2.pipes.map((p) => (pm.has(p.id) ? { ...p, dn: pm.get(p.id)!.dn, tag: pm.get(p.id)!.tag } : p)),
             nodes: s2.nodes.map((n) => (nm.has(n.id) ? { ...n, dn: nm.get(n.id)!.dn } : n)),
-          }), { sizingUndo: null });
+          }), { sizingUndo: null }, "Undo dimensionare");
           return true;
         },
 
@@ -784,70 +775,32 @@ export const usePid = create<State>()(
 
         insertModule: (id, x, y) => {
           const st = get();
-          const m = st.modules.find((mm) => mm.id === id);
+          const m = st.modules.find((mm) => mm.id === id) ?? BUILTIN_MODULES.find((mm) => mm.id === id);
           if (!m) return;
-          const xs = m.nodes.map((n) => n.x), ys = m.nodes.map((n) => n.y);
-          const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-          const map = new Map<string, string>();
-          const tags = st.scheme.nodes.map((n) => n.tag);
-          const nodes: PidNode[] = m.nodes.map((n) => {
-            const nid = uid();
-            map.set(n.id, nid);
-            const tag = nextTag(getSymbol(n.type).prefix, tags);
-            tags.push(tag);
-            return { ...structuredClone(n), id: nid, tag, x: n.x - cx + x, y: n.y - cy + y };
-          });
-          const ptags = st.scheme.pipes.map((p) => p.tag);
-          const pipes: Pipe[] = m.pipes.map((p) => {
-            const np: Pipe = { ...structuredClone(p), id: uid(), from: { ...p.from, node: map.get(p.from.node)! }, to: { ...p.to, node: map.get(p.to.node)! } };
-            np.tag = pipeTag(np, ptags);
-            ptags.push(np.tag);
-            return np;
-          });
-          patchScheme((s) => ({ ...s, nodes: [...s.nodes, ...nodes], pipes: [...s.pipes, ...pipes] }),
-            { multi: nodes.map((n) => n.id), selected: nodes[0] ? { kind: "node", id: nodes[0].id } : null });
+          const r = insertModuleData(st.scheme, m, x, y);
+          patchScheme(() => r.scheme, { multi: r.nodeIds, multiPipes: r.pipeIds, selected: r.nodeIds[0] ? { kind: "node", id: r.nodeIds[0] } : null }, `Modul ${m.name}`);
         },
 
         flipPipe: (id) =>
           patchScheme((s) => ({
             ...s,
             pipes: s.pipes.map((p) => (p.id === id ? { ...p, from: p.to, to: p.from, points: p.points ? [...p.points].reverse() : undefined } : p)),
-          })),
+          }), undefined, "Inversare sens"),
 
         select: (s) => set((st) => ({ selected: s, multi: s?.kind === "node" && st.multi.includes(s.id) ? st.multi : [], multiPipes: [] })),
 
         removeSelected: () => {
-          const st = get();
-          const sel = st.selected;
-          const multi = st.multi;
-          const mp = st.multiPipes;
-          if (mp.length) {
-            const pipeIds = new Set(mp);
-            const nodeIds = new Set(multi);
-            patchScheme((s) => ({
-              ...s,
-              nodes: s.nodes.filter((n) => !nodeIds.has(n.id)),
-              pipes: s.pipes.filter((p) => !pipeIds.has(p.id) && !nodeIds.has(p.from.node) && !nodeIds.has(p.to.node)),
-            }), { selected: null, multi: [], multiPipes: [] });
-            return;
-          }
-          if (multi.length > 1) {
-            const ids = new Set(multi);
-            patchScheme((s) => ({
-              ...s,
-              nodes: s.nodes.filter((n) => !ids.has(n.id)),
-              pipes: s.pipes.filter((p) => !ids.has(p.from.node) && !ids.has(p.to.node)),
-            }), { selected: null, multi: [] });
-            return;
-          }
-          if (!sel) return;
-          patchScheme((s) => sel.kind === "pipe"
-            ? { ...s, pipes: s.pipes.filter((p) => p.id !== sel.id) }
-            : {
-              ...s,
-              nodes: s.nodes.filter((n) => n.id !== sel.id),
-              pipes: s.pipes.filter((p) => p.from.node !== sel.id && p.to.node !== sel.id),
-            }, { selected: null });
+          const { nodes, pipes } = selection();
+          if (!nodes.length && !pipes.length) return;
+          const s0 = get().scheme;
+          const nodeIds = new Set(nodes.filter((id) => { const n = s0.nodes.find((x) => x.id === id); return n && !nodeLocked(s0, n); }));
+          const pipeIds = new Set(pipes.filter((id) => { const p = s0.pipes.find((x) => x.id === id); return p && !pipeLocked(s0, p); }));
+          if (!nodeIds.size && !pipeIds.size) return;
+          patchScheme((s) => ({
+            ...s,
+            nodes: s.nodes.filter((n) => !nodeIds.has(n.id)),
+            pipes: s.pipes.filter((p) => !pipeIds.has(p.id) && !nodeIds.has(p.from.node) && !nodeIds.has(p.to.node)),
+          }), { selected: null, multi: [], multiPipes: [] }, `Ștergere (${nodeIds.size + pipeIds.size})`);
         },
 
         setPipeDefaults: (p) => set((st) => ({ pipeDefaults: { ...st.pipeDefaults, ...p } })),
@@ -859,17 +812,17 @@ export const usePid = create<State>()(
             const ntags: string[] = [];
             const nodes = s.nodes.map((n) => { const tag = nextTag(getSymbol(n.type).prefix, ntags); ntags.push(tag); return { ...n, tag }; });
             return { ...s, pipes, nodes };
-          }),
+          }, undefined, "Re-numerotare generală"),
 
-        setCircuitColor: (c, color) => patchScheme((s) => ({ ...s, circuitColors: { ...s.circuitColors, [c]: color } })),
-        resetCircuitColors: () => patchScheme((s) => ({ ...s, circuitColors: { ...DEFAULT_CIRCUIT_COLORS } })),
+        setCircuitColor: (c, color) => patchScheme((s) => ({ ...s, circuitColors: { ...s.circuitColors, [c]: color } }), undefined, "Culoare circuit"),
+        resetCircuitColors: () => patchScheme((s) => ({ ...s, circuitColors: { ...DEFAULT_CIRCUIT_COLORS } }), undefined, "Culori implicite"),
 
         addCustomSymbol: (c) =>
           patchScheme((s) => {
             const list = [...s.customSymbols, { ...c, id: uid() }];
             syncCustomSymbols(list);
             return { ...s, customSymbols: list };
-          }),
+          }, undefined, "Simbol personalizat"),
 
         removeCustomSymbol: (id) =>
           patchScheme((s) => {
@@ -880,13 +833,13 @@ export const usePid = create<State>()(
               customSymbols: list,
               nodes: s.nodes.filter((n) => n.type !== `custom:${id}`),
             };
-          }),
+          }, undefined, "Ștergere simbol personalizat"),
 
         newProject: (name, template) =>
           set((st) => {
             const s = buildTemplate(template ?? "empty", name);
             syncCustomSymbols(s.customSymbols);
-            return { projects: [...st.projects, s], activeId: s.id, scheme: s, selected: null };
+            return { projects: [...st.projects, s], activeId: s.id, scheme: s, selected: null, multi: [], multiPipes: [], history: emptyHistory(s.id) };
           }),
 
         /** Însumarea automată a debitelor la teuri, pornind de la consumatorii activi. */
@@ -917,7 +870,7 @@ export const usePid = create<State>()(
               updated++;
               return { ...p, flow: info.flow, flowMode: "manual" as const };
             }),
-          }));
+          }), undefined, "Debite automate");
           const demand = Math.round(totalDemand(st.scheme, fp) * 100) / 100;
           return { updated, ambiguous, unresolved, demand, notes: [...notes] };
         },
@@ -928,7 +881,7 @@ export const usePid = create<State>()(
             const s = st.projects.find((p) => p.id === id);
             if (!s) return {};
             syncCustomSymbols(s.customSymbols);
-            return { activeId: id, scheme: s, selected: null };
+            return { activeId: id, scheme: s, selected: null, multi: [], multiPipes: [], history: emptyHistory(s.id) };
           }),
 
         duplicateProject: (id) =>
@@ -937,7 +890,7 @@ export const usePid = create<State>()(
             if (!src) return {};
             const copy: Scheme = { ...structuredClone(src), id: uid(), name: `${src.name} (copie)`, updatedAt: Date.now() };
             syncCustomSymbols(copy.customSymbols);
-            return { projects: [...st.projects, copy], activeId: copy.id, scheme: copy, selected: null };
+            return { projects: [...st.projects, copy], activeId: copy.id, scheme: copy, selected: null, multi: [], multiPipes: [], history: emptyHistory(copy.id) };
           }),
 
         deleteProject: (id) =>
@@ -946,46 +899,43 @@ export const usePid = create<State>()(
             const list = rest.length ? rest : [emptyScheme()];
             const active = list.find((p) => p.id === st.activeId) ?? list[0]!;
             syncCustomSymbols(active.customSymbols);
-            return { projects: list, activeId: active.id, scheme: active, selected: null };
+            return { projects: list, activeId: active.id, scheme: active, selected: null, multi: [], multiPipes: [], history: active.id === st.scheme.id ? st.history : emptyHistory(active.id) };
           }),
 
         importProject: (raw) => {
           try {
             const data = JSON.parse(raw) as Scheme;
             if (!Array.isArray(data.nodes) || !Array.isArray(data.pipes)) return "Fișier nevalid.";
-            const s: Scheme = {
-              ...emptyScheme(data.name || "Proiect importat"),
-              ...data,
-              id: uid(),
-              circuitColors: { ...DEFAULT_CIRCUIT_COLORS, ...(data.circuitColors ?? {}) },
-              customSymbols: data.customSymbols ?? [],
-              updatedAt: Date.now(),
-            };
+            const s: Scheme = { ...migrateScheme({ ...data, name: data.name || "Proiect importat" }), id: uid(), updatedAt: Date.now() };
             syncCustomSymbols(s.customSymbols);
-            set((st) => ({ projects: [...st.projects, s], activeId: s.id, scheme: s, selected: null }));
+            set((st) => ({ projects: [...st.projects, s], activeId: s.id, scheme: s, selected: null, multi: [], multiPipes: [], history: emptyHistory(s.id) }));
             return null;
           } catch {
             return "Fișierul nu a putut fi citit.";
           }
         },
 
-        reset: (empty) =>
-          set((st) => {
-            const s = empty ? emptyScheme(st.scheme.name) : { ...demo(), id: st.scheme.id, name: st.scheme.name };
-            syncCustomSymbols(s.customSymbols);
-            return { scheme: s, projects: st.projects.map((p) => (p.id === st.activeId ? s : p)), selected: null };
-          }),
+        reset: (empty) => {
+          const st = get();
+          const s = empty ? { ...emptyScheme(st.scheme.name), id: st.scheme.id } : { ...demo(), id: st.scheme.id, name: st.scheme.name };
+          syncCustomSymbols(s.customSymbols);
+          patchScheme(() => s, { selected: null, multi: [], multiPipes: [] }, empty ? "Golire schemă" : "Schemă demo");
+        },
       };
     },
     {
       name: "pid-studio-v2",
-      partialize: (s) => ({ projects: s.projects, activeId: s.activeId, pipeDefaults: s.pipeDefaults, grid: s.grid, modules: s.modules, cad: s.cad }),
+      version: SCHEMA_VERSION,
+      // datele vechi (v0–v2) se migrează automat; merge aplică migrarea și pe fiecare proiect
+      migrate: (persisted) => persisted as State,
+      partialize: (s) => ({ projects: s.projects, activeId: s.activeId, pipeDefaults: s.pipeDefaults, grid: s.grid, modules: s.modules, cad: s.cad,
+        currentLayer: s.currentLayer, recentCommands: s.recentCommands, pasteOffset: s.pasteOffset }),
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<State>;
-        const projects = p.projects?.length ? p.projects : current.projects;
+        const projects = (p.projects?.length ? p.projects : current.projects).map((x) => migrateScheme(x));
         const scheme = projects.find((x) => x.id === p.activeId) ?? projects[0]!;
         syncCustomSymbols(scheme.customSymbols ?? []);
-        return { ...current, ...p, projects, activeId: scheme.id, scheme };
+        return { ...current, ...p, projects, activeId: scheme.id, scheme, history: emptyHistory(scheme.id) };
       },
     },
   ),

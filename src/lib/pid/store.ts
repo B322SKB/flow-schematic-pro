@@ -272,18 +272,200 @@ function touch(s: Scheme): Scheme {
 export const usePid = create<State>()(
   persist(
     (set, get) => {
-      /** Aplică o transformare pe schema activă și sincronizează lista de proiecte. */
-      const patchScheme = (fn: (s: Scheme) => Scheme, extra?: Partial<State>) =>
+      // tranzacții: în interiorul unui beginTx/endTx modificările nu se înregistrează individual
+      let txDepth = 0;
+      let txBefore: Scheme | null = null;
+      let txLabel = "";
+
+      /**
+       * Singurul punct prin care se modifică schema activă: sincronizează lista de proiecte și
+       * înregistrează tranzacția (Undo/Redo + Change Summary). `label` = numele acțiunii logice.
+       */
+      const patchScheme = (fn: (s: Scheme) => Scheme, extra?: Partial<State>, label = "Modificare") =>
         set((st) => {
-          const scheme = touch(fn(st.scheme));
+          const before = st.scheme;
+          const next = fn(before);
+          if (next === before) return extra ?? {};
+          const scheme = touch(next);
+          const hist0 = st.history.schemeId === scheme.id ? st.history : emptyHistory(scheme.id);
+          const history = txDepth > 0 ? hist0 : record(hist0, label, before, scheme);
           return {
             scheme,
             projects: st.projects.map((p) => (p.id === scheme.id ? scheme : p)),
+            history,
+            lastAction: txDepth > 0 ? txLabel : label,
             ...extra,
           } as Partial<State>;
         });
 
+      /** Elimină din selecție obiectele care nu mai există (după undo/redo/ștergere). */
+      const pruneSel = (st: State, sc: Scheme): Partial<State> => {
+        const ns = new Set(sc.nodes.map((n) => n.id)), ps = new Set(sc.pipes.map((p) => p.id));
+        const sel = st.selected && (st.selected.kind === "node" ? ns : ps).has(st.selected.id) ? st.selected : null;
+        return { selected: sel, multi: st.multi.filter((id) => ns.has(id)), multiPipes: st.multiPipes.filter((id) => ps.has(id)) };
+      };
+
+      const selection = () => {
+        const st = get();
+        const nodes = st.multi.length ? st.multi : st.selected?.kind === "node" ? [st.selected.id] : [];
+        const pipes = st.multiPipes.length ? st.multiPipes : st.selected?.kind === "pipe" ? [st.selected.id] : [];
+        return { nodes, pipes };
+      };
+
       return {
+        history: emptyHistory(first.id),
+        lastAction: "",
+        clip: null,
+        pasteCount: 0,
+        pasteOffset: { x: 40, y: 40 },
+        currentLayer: "pid",
+        visualMode: "design",
+        viewRequest: null,
+        findOpen: false,
+        commandOpen: false,
+        recentCommands: [],
+        lastCommand: null,
+        inspectorFocus: 0,
+
+        undo: () => {
+          const st = get();
+          if (st.history.schemeId !== st.scheme.id) return false;
+          const r = undoTx(st.history);
+          if (!r) return false;
+          syncCustomSymbols(r.scheme.customSymbols);
+          set({ scheme: r.scheme, projects: st.projects.map((p) => (p.id === r.scheme.id ? r.scheme : p)), history: r.history, lastAction: `Undo: ${r.label}`, ...pruneSel(st, r.scheme) });
+          return true;
+        },
+        redo: () => {
+          const st = get();
+          if (st.history.schemeId !== st.scheme.id) return false;
+          const r = redoTx(st.history);
+          if (!r) return false;
+          syncCustomSymbols(r.scheme.customSymbols);
+          set({ scheme: r.scheme, projects: st.projects.map((p) => (p.id === r.scheme.id ? r.scheme : p)), history: r.history, lastAction: `Redo: ${r.label}`, ...pruneSel(st, r.scheme) });
+          return true;
+        },
+        beginTx: (label) => {
+          if (txDepth === 0) { txBefore = get().scheme; txLabel = label; }
+          txDepth++;
+        },
+        endTx: () => {
+          if (txDepth === 0) return;
+          txDepth--;
+          if (txDepth > 0) return;
+          const before = txBefore;
+          txBefore = null;
+          set((st) => {
+            if (!before || before.id !== st.scheme.id) return {};
+            const hist0 = st.history.schemeId === st.scheme.id ? st.history : emptyHistory(st.scheme.id);
+            return { history: record(hist0, txLabel, before, st.scheme), lastAction: txLabel };
+          });
+        },
+        transact: (label, fn) => {
+          get().beginTx(label);
+          try { return fn(); } finally { get().endTx(); }
+        },
+
+        setPasteOffset: (o) => set({ pasteOffset: o }),
+        toggleSelect: (kind, id) => {
+          const st = get();
+          const { nodes, pipes } = selection();
+          const n = kind === "node" ? (nodes.includes(id) ? nodes.filter((x) => x !== id) : [...nodes, id]) : nodes;
+          const pp = kind === "pipe" ? (pipes.includes(id) ? pipes.filter((x) => x !== id) : [...pipes, id]) : pipes;
+          const last = kind === "node" ? (n.includes(id) ? { kind, id } : null) : (pp.includes(id) ? { kind, id } : null);
+          set({ multi: n, multiPipes: pp, selected: last ?? (n[0] ? { kind: "node", id: n[0] } : pp[0] ? { kind: "pipe", id: pp[0] } : null) });
+          void st;
+        },
+        setSelection: (nodes, pipes) =>
+          set({ multi: nodes, multiPipes: pipes, selected: nodes[0] ? { kind: "node", id: nodes[0] } : pipes[0] ? { kind: "pipe", id: pipes[0] } : null }),
+        selectAll: (what = "all") => {
+          const s = get().scheme;
+          const vis = (cat: string) => what === "all" || (what === "equipment" ? cat === "Echipamente" || cat === "Pompe" : what === "valves" ? cat === "Vane" || cat === "Fitinguri" : false);
+          const nodes = what === "pipes" ? [] : s.nodes.filter((n) => vis(getSymbol(n.type).category)).map((n) => n.id);
+          const pipes = what === "all" || what === "pipes" ? s.pipes.map((p) => p.id) : [];
+          get().setSelection(nodes, pipes);
+        },
+        bulkPipes: (patch, ids) => {
+          const target = ids ?? selection().pipes;
+          const r = bulkEditPipes(get().scheme, target, patch);
+          if (r.changed.length) patchScheme(() => r.scheme, undefined, `Editare în masă (${r.changed.length} conducte)`);
+          return r;
+        },
+        bulkNodes: (patch, ids) => {
+          const target = ids ?? selection().nodes;
+          const r = bulkEditNodes(get().scheme, target, patch);
+          if (r.changed.length) patchScheme(() => r.scheme, undefined, `Editare în masă (${r.changed.length} elemente)`);
+          return r;
+        },
+        retagSelected: (prefix, start) => {
+          const { nodes, pipes } = selection();
+          if (!nodes.length && !pipes.length) return;
+          patchScheme((s) => retagSelection(s, [...nodes, ...pipes], { prefix, start }), undefined, "Re-numerotare selecție");
+        },
+        renameTag: (id, tag) => {
+          const s = get().scheme;
+          const t = tag.trim();
+          if (!t || !tagAvailable(s, t, id)) return false;
+          patchScheme((sc) => ({
+            ...sc,
+            nodes: sc.nodes.map((n) => (n.id === id ? { ...n, tag: t } : n)),
+            pipes: sc.pipes.map((p) => (p.id === id ? { ...p, tag: t } : p)),
+          }), undefined, `Redenumire ${t}`);
+          return true;
+        },
+        rerouteSelected: (ids) => {
+          const s = get().scheme;
+          const sel = selection();
+          const target = ids ?? (sel.pipes.length ? sel.pipes
+            : s.pipes.filter((p) => sel.nodes.includes(p.from.node) || sel.nodes.includes(p.to.node)).map((p) => p.id));
+          const free = target.filter((id) => { const p = s.pipes.find((x) => x.id === id); return p && !pipeLocked(s, p); });
+          const r = rerouteMany(s, free);
+          if (r.changed.length) patchScheme(() => r.scheme, undefined, `Rerutare (${r.changed.length})`);
+          return r.changed.length;
+        },
+        connectPorts: (a, b) => {
+          const check = validateConnection(get().scheme, a, b);
+          if (check.ok) get().addPipe(a, b, check.circuit ? { circuit: check.circuit } : undefined);
+          return check;
+        },
+        smartConnectOpenEnd: (openNodeId, target) => {
+          const r = connectOpenEnd(get().scheme, openNodeId, target);
+          if (r.check.ok) patchScheme(() => r.scheme, { selected: null, multi: [] }, "Smart Connect");
+          return r.check;
+        },
+        autoSizeSelected: (mode = "legacy") => {
+          const st = get();
+          const sel = selection().pipes;
+          if (!sel.length) return st.autoSizePipes(mode);
+          const s = st.scheme;
+          const fp = fluidProps(s.fluid, s.concentration, s.temperature);
+          const plan = planSizing(s, fp, { mode, rMax: maxR(s) });
+          const want = new Set(sel);
+          const tags = s.pipes.map((p) => p.tag);
+          let pipes = 0;
+          const next = s.pipes.map((p) => {
+            const dn = plan.changes.get(p.id);
+            if (dn === undefined || !want.has(p.id) || pipeLocked(s, p)) return p;
+            pipes++;
+            const np = { ...p, dn };
+            np.tag = pipeTag(np, tags);
+            tags.push(np.tag);
+            return np;
+          });
+          const skipped = sel.filter((id) => plan.sizes.get(id)?.status === "skipped").length;
+          if (pipes) patchScheme((s2) => ({ ...s2, pipes: next }), undefined, `Auto-size selecție (${pipes})`);
+          return { pipes, valves: 0, skipped };
+        },
+        setCurrentLayer: (l) => set({ currentLayer: l }),
+        setLayerState: (l, p) => patchScheme((s) => ({ ...s, layers: { ...(s.layers ?? {}), [l]: { visible: true, locked: false, ...(s.layers?.[l] ?? {}), ...p } } }), undefined, "Straturi"),
+        setVisualMode: (m) => set({ visualMode: m }),
+        requestView: (r) => set((st) => ({ viewRequest: { ...r, nonce: (st.viewRequest?.nonce ?? 0) + 1 } })),
+        setFindOpen: (v) => set({ findOpen: v }),
+        setCommandOpen: (v) => set({ commandOpen: v }),
+        pushRecentCommand: (id, repeatable) =>
+          set((st) => ({ recentCommands: [id, ...st.recentCommands.filter((x) => x !== id)].slice(0, 8), lastCommand: repeatable ? id : st.lastCommand })),
+        focusInspector: () => set((st) => ({ inspectorFocus: st.inspectorFocus + 1 })),
+
         projects: [first],
         activeId: first.id,
         scheme: first,

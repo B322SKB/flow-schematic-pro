@@ -65,10 +65,12 @@ function App() {
   const wait = () => new Promise((r) => setTimeout(r, 120));
   const run = async (fn: () => unknown, label: string, m: "clean" | "coded" = "coded") => {
     usePid.getState().select(null);
+    const vm = usePid.getState().visualMode;
+    usePid.getState().setVisualMode("design"); // exportul folosește întotdeauna desenul de proiect
     setMode(m);
     await wait();
     try { await fn(); toast.success(`${label} generat`); } catch (e) { console.error(e); toast.error(`${label} nu a putut fi generat`); }
-    finally { setMode("normal"); }
+    finally { setMode("normal"); usePid.getState().setVisualMode(vm); }
   };
   const pdf = async () => {
     const svg = svgRef.current!;

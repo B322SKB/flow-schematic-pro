@@ -29,7 +29,8 @@ export function SizingControls({ mode, setMode }: { mode: SizingMode; setMode: (
   const { autoSizePipes, undoSizing, sizingUndo, scheme } = usePid();
   return (
     <div className="space-y-2">
-      <Sel label="Mod dimensionare" value={mode} onChange={(v) => setMode(v as SizingMode)}
+      <p className="text-muted-foreground">Mod dimensionare</p>
+      <Sel value={mode} onChange={(v) => setMode(v as SizingMode)}
         options={(Object.keys(SIZING_MODE_LABEL) as SizingMode[]).map((m) => ({ value: m, label: SIZING_MODE_LABEL[m] }))} />
       <div className="flex gap-2">
         <Button size="sm" variant="secondary" className="flex-1" onClick={() => {

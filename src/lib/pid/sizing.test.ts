@@ -20,7 +20,7 @@ const scheme = (nodes: PidNode[], pipes: Pipe[], extra: Partial<Scheme> = {}): S
   circuitColors: {}, customSymbols: [], revision: "A", updatedAt: 0, ...extra,
 });
 const radial = (flow: number, extra: Partial<Scheme> = {}, dn = 50) => scheme(
-  [node("CH", "chiller", 0, 0), node("A", "ccu", 600, 0, { flow, dpFixed: 20 })],
+  [node("CH", "chiller", 0, 0, { dpFixed: 40 }), node("A", "ccu", 600, 0, { flow, dpFixed: 20 })],
   [pipe("P", ["CH", "c"], ["A", "a"], 20, flow, { dn })], extra,
 );
 

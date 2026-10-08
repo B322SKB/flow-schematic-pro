@@ -158,7 +158,7 @@ export function solveNetwork(scheme: Scheme, fp: FluidProps, opts: SolverOptions
           continue;
         }
       }
-      if (srcs.length > 1) warn("multi_source_split", `Circuit ${circuit}: ${srcs.length} surse în paralel — debit împărțit egal (fără curbe de pompă)`);
+      if (srcs.length > 1) warn("multi_source_split", `Preliminary – equal split fallback: circuit ${circuit}, ${srcs.length} surse în paralel — debit împărțit egal (fără curbe de pompă)`);
       const inj = new Map<string, number>();
       for (const t of terms) inj.set(t, -(demand.get(t) ?? 0));
       for (const s of srcs) inj.set(s, (inj.get(s) ?? 0) + (srcs.length ? totalDem / srcs.length : 0));

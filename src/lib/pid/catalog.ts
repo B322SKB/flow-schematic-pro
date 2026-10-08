@@ -1,4 +1,6 @@
 // Materials, pipe dimensions, joint technologies and fitting K-values.
+// DATA STATUS: approximate engineering values (inner diameters, roughness, K). Not verified against
+// manufacturer datasheets; a dedicated, documented catalogue update is planned (Sprint 2).
 
 export type MaterialId = "cf20" | "cf40" | "steel_carbon" | "steel_inox";
 export type JointType = "fusion" | "threaded" | "welded" | "flanged" | "grooved";

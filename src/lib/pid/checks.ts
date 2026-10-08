@@ -7,6 +7,7 @@ import { RE_LAMINAR, RE_TURBULENT } from "./hydraulics";
 import { nodeDemand } from "./network";
 import { solveNetwork, type SolverResult } from "./solver";
 import { getSymbol } from "./symbols";
+import { duplicateTags } from "./tags";
 import type { Scheme } from "./types";
 import { limitsFor, maxR } from "./velocity";
 
@@ -94,6 +95,19 @@ export function engineeringCheck(scheme: Scheme, fp: FluidProps, solution?: Solv
     }
     const level = items.reduce<CheckLevel>((a, i) => worst(a, i.level), "ok");
     elements.push({ id: n.id, tag: n.tag, kind: "equipment", level, items });
+  }
+
+  // tag-uri duplicate → warning pe fiecare obiect afectat
+  for (const [tag, ids] of duplicateTags(scheme)) {
+    for (const id of ids) {
+      const e = elements.find((x) => x.id === id);
+      const item: CheckItem = { metric: "data", label: "Tag", level: "warning", message: `tag duplicat „${tag}” (${ids.length} obiecte)` };
+      if (e) { e.items.push(item); e.level = worst(e.level, "warning"); }
+      else {
+        const n = scheme.nodes.find((x) => x.id === id);
+        if (n) elements.push({ id, tag: n.tag, kind: "equipment", level: "warning", items: [item] });
+      }
+    }
   }
 
   const counts: Record<CheckLevel, number> = { ok: 0, warning: 0, incomplete: 0, unresolved: 0 };

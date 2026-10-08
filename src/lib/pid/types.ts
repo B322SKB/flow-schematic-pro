@@ -1,6 +1,7 @@
 import type { CircuitId, FittingId, JointType, MaterialId } from "./catalog";
 import type { FluidId } from "./fluids";
 import type { CustomSymbol, SymbolType } from "./symbols";
+import type { LayerId, LayerState } from "./layers";
 
 export interface PidNode {
   id: string;
@@ -24,6 +25,7 @@ export interface PidNode {
   codeDy?: number | undefined;
   intPump?: "single" | "twin" | undefined; // modul hidraulic integrat (chiller cu pompă)
   pumpHead?: number | undefined; // kPa, presiune utilă disponibilă la flanșe
+  layer?: LayerId | undefined; // strat explicit (altfel stratul implicit al categoriei)
 }
 
 export interface Pipe {
@@ -45,6 +47,8 @@ export interface Pipe {
   fittings: Partial<Record<FittingId, number>>;
   direct?: boolean | undefined; // legătură directă între elemente (fără țeavă)
   disabled?: boolean | undefined; // tronson scos din funcțiune (scenariu inel)
+  insulation?: string | undefined; // izolație (informativ, MTO)
+  layer?: LayerId | undefined;
 }
 
 export interface Scheme {
@@ -66,4 +70,8 @@ export interface Scheme {
   reliefPressure?: number | undefined; // presiunea supapei de siguranță [bar suprapresiune]
   revision: string;
   updatedAt: number;
+  /** Versiunea modelului; migrată automat la încărcare (migrate.ts). */
+  schemaVersion?: number | undefined;
+  /** Starea straturilor (vizibil / blocat) */
+  layers?: Partial<Record<LayerId, LayerState>> | undefined;
 }

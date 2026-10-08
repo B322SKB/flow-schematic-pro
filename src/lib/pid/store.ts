@@ -6,7 +6,7 @@ import {
 } from "./catalog";
 import { getSymbol, syncCustomSymbols, type CustomSymbol, type SymbolType } from "./symbols";
 import type { Pipe, PidNode, Scheme } from "./types";
-import { colebrook, pipeRoute } from "./hydraulics";
+import { pipeRoute, selectDn } from "./hydraulics";
 import { flowFromKw, fluidProps } from "./fluids";
 import { propagateFlows, totalDemand } from "./network";
 import { limitsFor, maxR } from "./velocity";

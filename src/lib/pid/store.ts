@@ -7,6 +7,7 @@ import {
 import { getSymbol, syncCustomSymbols, type CustomSymbol, type SymbolType } from "./symbols";
 import type { Pipe, PidNode, Scheme } from "./types";
 import { pipeRoute, selectDn } from "./hydraulics";
+import { solveNetwork } from "./solver";
 import { flowFromKw, fluidProps } from "./fluids";
 import { propagateFlows, totalDemand } from "./network";
 import { limitsFor, maxR } from "./velocity";
@@ -635,6 +636,8 @@ export const usePid = create<State>()(
           const st = get();
           const fp = fluidProps(st.scheme.fluid, st.scheme.concentration, st.scheme.temperature);
           const flows = propagateFlows(st.scheme, fp);
+          // tronsoanele de inel: debitul se preia din solverul de rețea dacă acesta a convers
+          const sol = solveNetwork(st.scheme, fp);
           let updated = 0, ambiguous = 0, unresolved = 0;
           const notes = new Set<string>();
           patchScheme((s) => ({
@@ -643,7 +646,14 @@ export const usePid = create<State>()(
               const info = flows.get(p.id);
               if (!info) return p;
               if (info.reason) notes.add(info.reason);
-              if (info.ambiguous) { ambiguous++; return p; }
+              if (info.ambiguous) {
+                const sp = sol.converged ? sol.pipes.get(p.id) : undefined;
+                if (!sp) { ambiguous++; return p; }
+                const fl = Math.round(Math.abs(sp.flowSigned) * 100) / 100;
+                if (Math.abs(fl - p.flow) < 0.005) return p;
+                updated++;
+                return { ...p, flow: fl, flowMode: "manual" as const };
+              }
               if (info.reason) { unresolved++; return p; }
               if (Math.abs(info.flow - p.flow) < 0.005) return p;
               updated++;

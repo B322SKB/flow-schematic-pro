@@ -4,7 +4,7 @@ import { DN_LIST } from "@/lib/pid/catalog";
 import { DEFAULT_MAX_R, limitsFor } from "@/lib/pid/velocity";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { propagateFlows, pumpDuty } from "@/lib/pid/network";
+import { evaluateNetwork, propagateFlows, pumpDuty } from "@/lib/pid/network";
 import { expansionSizing, volumeTotals } from "@/lib/pid/volume";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
@@ -126,6 +126,8 @@ export function HydraulicsView() {
   const warns = results.filter((x) => x.r.velWarn).length;
   const duty = useMemo(() => pumpDuty(scheme, fp), [scheme, fp]);
   const auto = useMemo(() => propagateFlows(scheme, fp), [scheme, fp]);
+  const ev = useMemo(() => evaluateNetwork(scheme, fp), [scheme, fp]);
+  const sol = ev.solution;
   const vol = useMemo(() => volumeTotals(scheme), [scheme]);
   const exp = useMemo(() => expansionSizing(scheme), [scheme]);
   const critical = duty.path?.pipes ?? [];
@@ -163,7 +165,7 @@ export function HydraulicsView() {
                 <span>{v.L.toFixed(1)} m · <b className="text-primary">{fmtP(v.dp, pu, fp.rho)} {pu}</b></span>
               </div>
             ))}
-            <div className="flex justify-between border-t pt-2 text-sm font-semibold"><span className="font-sans">Circuit complet</span><span className="text-primary">{fmtP(total, pu, fp.rho)} {pu}</span></div>
+            <div className="flex justify-between border-t pt-2 text-sm font-semibold"><span className="font-sans">Σ inventar (nu Δp sistem)</span><span className="text-primary">{fmtP(total, pu, fp.rho)} {pu}</span></div>
             <p className="font-sans text-[11px] text-muted-foreground">Include pierderile liniare, fitingurile, vanele și căderile de presiune ale echipamentelor.</p>
           </CardContent>
         </Card>
@@ -207,6 +209,24 @@ export function HydraulicsView() {
         <Card>
           <CardHeader className="pb-3"><CardTitle className="text-sm">Traseu critic și punct de funcționare</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-xs">
+            <div className="space-y-1 rounded border px-2 py-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Solver rețea (Hardy-Cross, preliminar)</span>
+                <Badge variant={ev.networkSolved ? "secondary" : "destructive"}>{ev.status}</Badge>
+              </div>
+              <Row k="Bucle / iterații" v={`${sol.loops} / ${sol.iterations}`} />
+              <Row k="Erori continuitate / energie" v={`${sol.maxContinuityError.toExponential(1)} m³/h · ${sol.maxEnergyError.toFixed(2)} Pa`} />
+              {ev.networkSolved && sol.critical && (
+                <Row k={`Δp sistem (→ ${sol.critical.endTag})`} v={`${fmtP(sol.systemDp, pu, fp.rho)} ${pu}`} />
+              )}
+              {sol.pipes.size > 0 && [...sol.pipes.values()].some((p) => p.direction === "reverse") && (
+                <p className="text-[11px] text-muted-foreground">Sens invers față de desen: {[...sol.pipes.values()].filter((p) => p.direction === "reverse").map((p) => `${p.tag} (${Math.abs(p.flowSigned).toFixed(2)} m³/h)`).join(", ")}</p>
+              )}
+              {ev.warnings.filter((w) => w.severity === "error").slice(0, 4).map((w, i) => <p key={`e${i}`} className="text-[11px] text-destructive">{w.message}</p>)}
+              {ev.warnings.filter((w) => w.severity !== "error" && w.severity !== "info").length > 0 && (
+                <p className="text-[11px] text-warning">{ev.warnings.filter((w) => w.severity !== "error" && w.severity !== "info").length} avertizare(i) de calcul</p>
+              )}
+            </div>
             {duty.path ? (
               <>
                 <p className="font-mono text-[11px] leading-relaxed text-muted-foreground">
@@ -218,7 +238,7 @@ export function HydraulicsView() {
                 <Row k="Sarcină cu marjă 10%" v={`${duty.margin.toFixed(1)} mCA`} />
                 <Row k="Debit total" v={`${duty.flow.toFixed(2)} m³/h`} />
                 {duty.covered && <Badge className="bg-success text-success-foreground">Modulul hidraulic integrat acoperă circuitul</Badge>}
-                <p className="text-[11px] text-muted-foreground">Traseul critic este evidențiat pe schema de mai jos.</p>
+                <p className="text-[11px] text-muted-foreground">Traseul critic este evidențiat pe schema de mai jos. Sarcina pompei este o estimare preliminară (fără curbă de pompă).</p>
               </>
             ) : <p className="text-muted-foreground">Adaugă o sursă (chiller) și conducte pentru a determina traseul critic.</p>}
           </CardContent>

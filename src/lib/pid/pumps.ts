@@ -4,6 +4,9 @@
  * Ph = Q·Δp ; Pshaft = Ph / η_pump ; Pmotor = Pshaft / η_motor.
  * Curve data comes from the user/manufacturer; nothing is invented here.
  */
+import type { FluidProps } from "./fluids";
+import type { SolverResult } from "./solver";
+import type { PidNode, Scheme } from "./types";
 export type DataQuality = "reference" | "manufacturer" | "standard" | "engineering-estimate" | "user-defined";
 export interface CurvePoint { q: number; h: number } // m³/h, mCA
 export interface EffPoint { q: number; eta: number } // m³/h, 0..1
@@ -114,3 +117,32 @@ export function operatingPoint(p: PumpData, sys: { h0: number; k: number }, rho 
 
 /** Etichetă explicită pentru fallback-ul solverului fără curbe. */
 export const EQUAL_SPLIT_LABEL = "Preliminary – equal split fallback";
+
+/* ---- Legătura cu modelul P&ID și solverul ---- */
+
+export const PUMP_TYPES = new Set(["pump_centrifugal", "pump_inline", "pump_twin"]);
+export const isPumpNode = (n: PidNode) => PUMP_TYPES.has(n.type) || !!n.intPump;
+
+export interface PumpEvaluation {
+  id: string; tag: string;
+  demandQ: number; demandH: number; // punctul cerut de sistem (solver)
+  result: PumpResult;
+  /** curve-based = intersecție reală; preliminary = fără curbă (doar sarcina cerută) */
+  basis: "curve-based" | "preliminary";
+}
+
+/** Curba sistemului este calibrată din soluția solverului (Q sursă, Δp traseu critic), h0 = 0 (circuit închis). */
+export function evaluatePumps(scheme: Scheme, fp: FluidProps, sol: SolverResult): PumpEvaluation[] {
+  const Q = sol.sourceFlow;
+  const H = sol.systemDp / (fp.rho * 9.81);
+  const sys = systemCurve(Q, H);
+  return scheme.nodes.filter(isPumpNode).map((n) => {
+    const r = n.pump ? operatingPoint(n.pump, sys, fp.rho, Q) : { basis: "unavailable" as const, q: 0, h: 0, dp: 0, qPerPump: 0, hydraulicKw: 0, status: ["no_curve" as const] };
+    return { id: n.id, tag: n.tag, demandQ: Q, demandH: H, result: r, basis: r.basis === "curve-based" ? "curve-based" : "preliminary" };
+  });
+}
+
+/** Parsează „Q H” sau „Q;H” pe linii. */
+export function parsePairs(txt: string): { a: number; b: number }[] {
+  return txt.split(/\n+/).map((l) => l.trim().split(/[\s;,]+/).map(Number)).filter((x) => x.length >= 2 && x.every(Number.isFinite)).map(([a, b]) => ({ a: a!, b: b! }));
+}

@@ -11,6 +11,7 @@ import { Palette } from "@/components/pid/Palette";
 import { Inspector } from "@/components/pid/Inspector";
 import { HydraulicsView } from "@/components/pid/HydraulicsView";
 import { BomView } from "@/components/pid/BomView";
+import { PumpsView } from "@/components/pid/PumpsView";
 import { ColorsDialog, ProjectsDialog, SystemDialog } from "@/components/pid/Dialogs";
 import { usePid } from "@/lib/pid/store";
 import { CIRCUITS, CIRCUIT_IDS, circuitColor } from "@/lib/pid/catalog";
@@ -93,6 +94,7 @@ function App() {
         <TabsList>
           <TabsTrigger value="editor"><Workflow className="mr-1.5 h-4 w-4" />Editor</TabsTrigger>
           <TabsTrigger value="hydro"><Gauge className="mr-1.5 h-4 w-4" />Hidraulică</TabsTrigger>
+          <TabsTrigger value="pumps"><Gauge className="mr-1.5 h-4 w-4" />Pompe & fluid</TabsTrigger>
           <TabsTrigger value="bom"><ClipboardList className="mr-1.5 h-4 w-4" />BOM / MTO</TabsTrigger>
         </TabsList>
         <SystemDialog />
@@ -179,6 +181,7 @@ function App() {
         </div>
       </TabsContent>
       <TabsContent value="hydro" className="mt-0 min-h-0 flex-1"><HydraulicsView /></TabsContent>
+      <TabsContent value="pumps" className="mt-0 min-h-0 flex-1"><PumpsView /></TabsContent>
       <TabsContent value="bom" className="mt-0 min-h-0 flex-1"><BomView /></TabsContent>
     </Tabs>
   );

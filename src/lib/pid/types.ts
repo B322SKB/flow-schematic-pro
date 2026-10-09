@@ -2,6 +2,7 @@ import type { CircuitId, FittingId, JointType, MaterialId } from "./catalog";
 import type { FluidId } from "./fluids";
 import type { CustomSymbol, SymbolType } from "./symbols";
 import type { LayerId, LayerState } from "./layers";
+import type { PumpData } from "./pumps";
 
 export interface PidNode {
   id: string;
@@ -26,6 +27,7 @@ export interface PidNode {
   intPump?: "single" | "twin" | undefined; // modul hidraulic integrat (chiller cu pompă)
   pumpHead?: number | undefined; // kPa, presiune utilă disponibilă la flanșe
   layer?: LayerId | undefined; // strat explicit (altfel stratul implicit al categoriei)
+  pump?: PumpData | undefined; // date pompă (curbă, randament, motor) – Etapa 5
 }
 
 export interface Pipe {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { interpolateHead, operatingPoint, systemCurve, type PumpData } from "./pumps";
+import { evaluatePumps, parsePairs, interpolateHead, operatingPoint, systemCurve, type PumpData } from "./pumps";
 
 const base: PumpData = {
   tag: "P1", count: 1, arrangement: "single", mounting: "external", quality: "user-defined",
@@ -38,4 +38,16 @@ describe("Pump engineering", () => {
     expect(operatingPoint({ ...base, motorPower: 1 }, systemCurve(30, 20)).status).toContain("motor_undersized");
     expect(operatingPoint({ ...base, curve: [] }, systemCurve(30, 20)).basis).toBe("unavailable");
   });
+});
+
+describe("Pump ↔ network", () => {
+  it("uses solver point as system curve and labels missing curve preliminary", () => {
+    const sc = { nodes: [{ id: "p", type: "pump_inline", tag: "P1", x: 0, y: 0, rotation: 0 }, { id: "q", type: "pump_inline", tag: "P2", x: 0, y: 0, rotation: 0, pump: base }] } as never;
+    const sol = { sourceFlow: 30, systemDp: 20 * 1000 * 9.81 } as never;
+    const ev = evaluatePumps(sc, { rho: 1000 } as never, sol);
+    expect(ev[0]!.basis).toBe("preliminary");
+    expect(ev[1]!.basis).toBe("curve-based");
+    expect(ev[1]!.result.q).toBeCloseTo(30, 1);
+  });
+  it("parses pairs", () => { expect(parsePairs("0 30\n20;25")).toEqual([{ a: 0, b: 30 }, { a: 20, b: 25 }]); });
 });

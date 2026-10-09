@@ -19,3 +19,5 @@
 - Every schema mutation goes through store patchScheme (labelled) → history.ts transaction; batch ops use transact/beginTx/endTx — one source for Undo/Redo, Change Summary and audit.
 - Commands live in src/lib/pid/commands.ts (Command bar, shortcuts, Space-repeat, copilot share them); shortcuts mapping in shortcuts.ts with editable-target guard — avoids duplicated logic in components.
 - Pure productivity modules (clipboard, connect, routing, bulk, layers, tags, search, modules, migrate) stay UI-free and are covered by productivity.test.ts.
+- Pump curves, operating point and pump↔solver link live in src/lib/pid/pumps.ts (system curve calibrated from solver Q/critical Δp, no extrapolation) — keeps pump results traceable and testable.
+- Fluid properties carry dataSource/rangeWarnings (fluids.ts): water from reference table, glycols remain engineering-estimate until manufacturer tables exist — never present estimates as certified.

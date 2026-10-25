@@ -42,7 +42,7 @@ if ($installScript -notmatch "PID_SESSION_SECRET") {
 if ($installScript -notmatch "SetAccessRuleProtection") {
   throw "Installer must restrict read access to its local credentials file."
 }
-if ($installScript -notmatch '(?m)^\s*& docker info 2>\$null\s*$') {
+if ($installScript -notmatch '(?m)^\s*& docker info 2>\$null\s*\|\s*Out-Null\s*$') {
   throw "Installer must suppress Docker diagnostic stderr so harmless engine warnings do not stop PowerShell."
 }
 if ($installScript -notmatch '(?s)& docker info 2>\$null.*?\$LASTEXITCODE -ne 0') {

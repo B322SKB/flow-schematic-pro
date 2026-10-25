@@ -39,6 +39,9 @@ if ($installScript -notmatch "New-Pbkdf2Sha256Hash" -or $installScript -notmatch
 if ($installScript -notmatch "PID_SESSION_SECRET") {
   throw "Installer must generate a session signing secret."
 }
+if ($installScript -notmatch "SetAccessRuleProtection") {
+  throw "Installer must restrict read access to its local credentials file."
+}
 if ($uninstallScript -match "down\s+(-v|--volumes)") {
   throw "Uninstaller must not remove persistent Docker volumes."
 }

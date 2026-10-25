@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
 import { Cloud, CloudDownload, CloudUpload, LogIn, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,7 +63,7 @@ export function RemoteSyncPanel() {
     try { window.localStorage.setItem("pid-remote-link:" + scheme.id, id); } catch { /* optional browser convenience */ }
   };
 
-  const signIn = async (event: React.FormEvent<HTMLFormElement>) => {
+  const signIn = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
     try {

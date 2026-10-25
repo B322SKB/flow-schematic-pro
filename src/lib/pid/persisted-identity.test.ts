@@ -78,6 +78,33 @@ describe("upgradePersistedProjectIdentities", () => {
     )).toThrow(/quota exceeded/);
   });
 
+  it("aborts the whole migration when any project has invalid identity references", () => {
+    const rawStorage = "original";
+    const storage: KeyValueStorage & { values: Map<string, string> } = {
+      values: new Map([["pid-studio-v2", rawStorage]]),
+      getItem(key) { return this.values.get(key) ?? null; },
+      setItem(key, value) { this.values.set(key, value); },
+    };
+    const broken = {
+      id: "broken",
+      nodes: [{ id: "n1", type: "chiller", tag: "CH-01", x: 0, y: 0, rotation: 0 }],
+      pipes: [{
+        id: "p1", tag: "L-01",
+        from: { node: "missing", port: "c" }, to: { node: "n1", port: "a" },
+        dn: 80, material: "steel_carbon", joint: "grooved", circuit: "supply",
+        length: 2.5, flow: 10, flowMode: "manual", routing: "auto", fittings: {},
+      }],
+    };
+    expect(() => migratePersistedPidState(
+      { projects: [project("valid"), broken] },
+      storage,
+      "pid-studio-v2",
+      () => uuid(1),
+    )).toThrow(/migration aborted.*broken/i);
+    expect(storage.getItem("pid-studio-v2")).toBe(rawStorage);
+    expect(storage.getItem("pid-studio-v2:pre-migration-backup")).toBe(rawStorage);
+  });
+
   it("aborts migration when the original persisted value is missing", () => {
     const storage: KeyValueStorage = {
       getItem: () => null,

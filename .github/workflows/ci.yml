@@ -21,6 +21,9 @@ jobs:
         run: bun install
       - name: Run unit tests
         run: bun run test
+      - name: Check Windows install package
+        shell: pwsh
+        run: ./deploy/windows/test-package.ps1
       - name: Build application
         run: bun run build
       - uses: actions/setup-node@v4
@@ -41,3 +44,10 @@ jobs:
           cat /tmp/pid-server.log
           kill "$(cat /tmp/pid-server.pid)" || true
           exit 1
+      - name: Package Windows on-prem installation bundle
+        run: git archive --format=zip --output=pid-flow-pro-windows-onprem.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pid-flow-pro-windows-onprem
+          path: pid-flow-pro-windows-onprem.zip
+          if-no-files-found: error

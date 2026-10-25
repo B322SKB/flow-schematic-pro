@@ -87,8 +87,16 @@ export function migratePersistedPidState<T>(
     throw new Error(`Cannot migrate persisted PID state: source storage value is missing (${storageKey})`);
   }
 
+  const upgrade = upgradePersistedProjectIdentities(persisted, idFactory);
+  if (upgrade.failedProjects.length) {
+    const details = upgrade.failedProjects
+      .map((failure) => `#${failure.index} (${failure.projectId ?? "unknown"}): ${failure.reason}`)
+      .join("; ");
+    throw new Error(`PID identity migration aborted; no projects were committed because some projects are invalid: ${details}`);
+  }
+
   return {
-    ...upgradePersistedProjectIdentities(persisted, idFactory),
+    ...upgrade,
     backup,
   };
 }

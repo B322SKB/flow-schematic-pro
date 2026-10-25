@@ -48,6 +48,9 @@ if ($installScript -notmatch '(?m)^\s*& docker info 2>\$null\s*$') {
 if ($installScript -notmatch '(?s)& docker info 2>\$null.*?\$LASTEXITCODE -ne 0') {
   throw "Installer must still fail when Docker engine health check returns a non-zero exit code."
 }
+if ($installScript -notmatch '(?s)\$previousDockerErrorActionPreference\s*=\s*\$ErrorActionPreference.*?\$ErrorActionPreference\s*=\s*"Continue".*?& docker info 2>\$null.*?\$dockerInfoExitCode\s*=\s*\$LASTEXITCODE.*?\$ErrorActionPreference\s*=\s*\$previousDockerErrorActionPreference') {
+  throw "Installer must tolerate Docker stderr warnings in Windows PowerShell while preserving the engine exit-code check."
+}
 if ($uninstallScript -match "down\s+(-v|--volumes)") {
   throw "Uninstaller must not remove persistent Docker volumes."
 }

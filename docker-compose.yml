@@ -1,3 +1,5 @@
+name: pid-flow-pro
+
 services:
   db:
     image: postgres:16-alpine

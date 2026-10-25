@@ -33,6 +33,12 @@ $deploymentGuide = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "docs/wind
 if ($installScript -notmatch "docker compose up -d --build") {
   throw "Installer must build and start the Compose application."
 }
+if ($installScript -notmatch "New-Pbkdf2Sha256Hash" -or $installScript -notmatch "PID_ADMIN_PASSWORD_HASH") {
+  throw "Installer must initialize administrator authentication credentials."
+}
+if ($installScript -notmatch "PID_SESSION_SECRET") {
+  throw "Installer must generate a session signing secret."
+}
 if ($uninstallScript -match "down\s+(-v|--volumes)") {
   throw "Uninstaller must not remove persistent Docker volumes."
 }

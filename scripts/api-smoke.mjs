@@ -8,6 +8,14 @@ assert.equal((await ready.json()).storage, "postgres");
 const anonymous = await fetch(new URL("/api/drawings", baseUrl), { method: "POST" });
 assert.equal(anonymous.status, 401, "drawing API must reject anonymous requests");
 
+const rejectedLogin = await fetch(new URL("/api/auth", baseUrl), {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ email: "admin@pid.local", password: "wrong-password" }),
+});
+assert.equal(rejectedLogin.status, 401, "invalid administrator credentials must be rejected");
+assert.equal(rejectedLogin.headers.get("set-cookie"), null, "failed login must not create a session");
+
 const login = await fetch(new URL("/api/auth", baseUrl), {
   method: "POST",
   headers: { "content-type": "application/json" },
@@ -16,6 +24,8 @@ const login = await fetch(new URL("/api/auth", baseUrl), {
 assert.equal(login.status, 200, "configured administrator credentials must create a session");
 const setCookie = login.headers.get("set-cookie");
 assert.ok(setCookie?.startsWith("pid_session="), "login must set a session cookie");
+assert.ok(setCookie.includes("HttpOnly"), "session cookie must not be readable by browser scripts");
+assert.ok(setCookie.includes("SameSite=Strict"), "session cookie must reject cross-site requests");
 const cookie = setCookie.split(";", 1)[0];
 const session = await fetch(new URL("/api/auth", baseUrl), { headers: { cookie } });
 assert.equal(session.status, 200);

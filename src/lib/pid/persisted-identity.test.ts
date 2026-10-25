@@ -41,11 +41,14 @@ describe("upgradePersistedProjectIdentities", () => {
   });
 
   it("does not mutate the original persisted state", () => {
-    const original = { projects: [project("p1")] };
-    const originalNodeId = original.projects[0]!.nodes[0]!.id;
+    const originalProject = project("p1");
+    const original = { projects: [originalProject] };
+    const originalNodeId = originalProject.nodes[0]!.id;
     let next = 1;
-    upgradePersistedProjectIdentities(original, () => uuid(next++));
+    const result = upgradePersistedProjectIdentities(original, () => uuid(next++));
     expect(original.projects[0]!.nodes[0]!.id).toBe(originalNodeId);
+    expect(result.state.projects[0]).not.toBe(originalProject);
+    expect(result.state.projects[0]!.nodes[0]!.id).toBe(uuid(1));
   });
 
   it("leaves projects without a projects array untouched", () => {

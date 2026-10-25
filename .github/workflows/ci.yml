@@ -51,6 +51,17 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f db/migrations/001_initial_schema.sql
       - name: Run unit tests
         run: bun run test
+      - name: Validate Compose configuration for the Windows installer
+        run: |
+          cat > /tmp/pid-onprem.env <<'EOF'
+          POSTGRES_PASSWORD=compose-test-password
+          PID_ADMIN_EMAIL=admin@pid.local
+          PID_ADMIN_PASSWORD_HASH=pbkdf2$310000$ABEiM0RVZneImaq7zN3u_w$u9SUEGrpYENvHdgsxf2H52HfhQkqCjau5TCFF5VOeQw
+          PID_SESSION_SECRET=ci-session-secret-change-me-32-bytes-minimum
+          APP_PORT=3000
+          APP_BIND_ADDRESS=127.0.0.1
+          EOF
+          docker compose --env-file /tmp/pid-onprem.env config --quiet
       - name: Check Windows install package
         shell: pwsh
         run: ./deploy/windows/test-package.ps1

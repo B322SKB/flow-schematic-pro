@@ -17,7 +17,7 @@ describe("P&ID on-prem authentication", () => {
     })).toThrow(/PID_ADMIN_PASSWORD_HASH/);
     expect(() => getAuthConfig({
       PID_ADMIN_EMAIL: "admin@example.test",
-      PID_ADMIN_PASSWORD_HASH: "pbkdf2$310000$c2FsdA$ZGlnZXN0",
+      PID_ADMIN_PASSWORD_HASH: "pbkdf2$310000$ABEiM0RVZneImaq7zN3u_w$u9SUEGrpYENvHdgsxf2H52HfhQkqCjau5TCFF5VOeQw",
       PID_SESSION_SECRET: "short",
     })).toThrow(/PID_SESSION_SECRET/);
   });
@@ -25,7 +25,7 @@ describe("P&ID on-prem authentication", () => {
   it("normalizes the configured administrator email", () => {
     const config = getAuthConfig({
       PID_ADMIN_EMAIL: " Admin@Example.Test ",
-      PID_ADMIN_PASSWORD_HASH: "pbkdf2$310000$c2FsdA$ZGlnZXN0",
+      PID_ADMIN_PASSWORD_HASH: "pbkdf2$310000$ABEiM0RVZneImaq7zN3u_w$u9SUEGrpYENvHdgsxf2H52HfhQkqCjau5TCFF5VOeQw",
       PID_SESSION_SECRET: "a".repeat(32),
     });
     expect(config.adminEmail).toBe("admin@example.test");

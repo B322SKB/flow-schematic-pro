@@ -67,7 +67,7 @@ describe("upgradePersistedProjectIdentities", () => {
 
   it("aborts migration when the raw persisted value cannot be backed up", () => {
     const storage: KeyValueStorage = {
-      getItem: () => "original",
+      getItem: (key) => key === "pid-studio-v2" ? "original" : null,
       setItem: () => { throw new Error("quota exceeded"); },
     };
     expect(() => migratePersistedPidState(

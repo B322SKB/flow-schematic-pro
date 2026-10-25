@@ -41,11 +41,13 @@ file while you keep the PostgreSQL data.
 
 ## Authentication
 
-GET/POST/DELETE /api/auth reads the session, signs in, and signs out. Drawing
-create/read/update endpoints require the HTTP-only, SameSite=Strict,
-eight-hour session cookie. This PoC configures one administrator identity;
-per-user accounts, drawing ownership, and team permissions are not implemented.
-Keep the service bound to 127.0.0.1.
+The editor header includes a cloud control for sign-in and manual drawing
+synchronization. After signing in, save the active project to create a server
+drawing, or enter its server ID to load/save it. The server ID is remembered per
+local project in that browser. Drawing create/read/update endpoints require an
+HTTP-only, SameSite=Strict, eight-hour session cookie. This PoC configures one
+administrator identity; per-user accounts, drawing ownership, and team
+permissions are not implemented. Keep the service bound to 127.0.0.1.
 
 ## Direct Compose setup
 
@@ -73,8 +75,9 @@ database volume.
 
 ## Current PoC limits
 
-- The editor UI still saves projects in browser localStorage and is not yet
-  synchronized with the PostgreSQL API.
+- The editor still saves projects in browser localStorage as its local source of
+  truth. Manual upload and download synchronize a complete snapshot with the
+  PostgreSQL API; automatic background sync is not implemented.
 - The configured administrator login protects drawing API endpoints. It does not
   implement multiple accounts, per-user drawing ownership, project sharing, or
   live multi-user editing.

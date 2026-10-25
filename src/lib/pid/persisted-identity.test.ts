@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { upgradePersistedProjectIdentities } from "./persisted-identity";
+import { migratePersistedPidState, upgradePersistedProjectIdentities } from "./persisted-identity";
+import type { KeyValueStorage } from "./persisted-backup";
 import type { Scheme } from "./types";
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -41,6 +42,53 @@ describe("upgradePersistedProjectIdentities", () => {
     expect(result.state.projects[0]).not.toBe(firstProject);
     expect(result.state.projects[2]).not.toBe(secondProject);
     expect(result.state.activeId).toBe("good-1");
+  });
+
+
+  it("backs up raw storage before upgrading persisted project IDs", () => {
+    const rawStorage = '{"state":{"projects":[{"id":"legacy"}]},"version":3}';
+    const storage: KeyValueStorage & { values: Map<string, string> } = {
+      values: new Map([["pid-studio-v2", rawStorage]]),
+      getItem(key) { return this.values.get(key) ?? null; },
+      setItem(key, value) { this.values.set(key, value); },
+    };
+    let next = 1;
+    const result = migratePersistedPidState(
+      { projects: [project("legacy-project")] },
+      storage,
+      "pid-studio-v2",
+      () => uuid(next++),
+    );
+    expect(result.backup.created).toBe(true);
+    expect(storage.getItem("pid-studio-v2:pre-migration-backup")).toBe(rawStorage);
+    expect(storage.getItem("pid-studio-v2")).toBe(rawStorage);
+    expect(result.state.projects[0]!.nodes[0]!.id).toBe(uuid(1));
+  });
+
+  it("aborts migration when the raw persisted value cannot be backed up", () => {
+    const storage: KeyValueStorage = {
+      getItem: () => "original",
+      setItem: () => { throw new Error("quota exceeded"); },
+    };
+    expect(() => migratePersistedPidState(
+      { projects: [project("legacy-project")] },
+      storage,
+      "pid-studio-v2",
+      () => uuid(1),
+    )).toThrow(/quota exceeded/);
+  });
+
+  it("aborts migration when the original persisted value is missing", () => {
+    const storage: KeyValueStorage = {
+      getItem: () => null,
+      setItem: () => undefined,
+    };
+    expect(() => migratePersistedPidState(
+      { projects: [project("legacy-project")] },
+      storage,
+      "pid-studio-v2",
+      () => uuid(1),
+    )).toThrow(/source storage value is missing/);
   });
 
   it("does not mutate the original persisted state", () => {

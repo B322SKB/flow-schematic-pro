@@ -21,6 +21,7 @@ import { powerTotals } from "@/lib/pid/power";
 import { exportSchemeDxf, exportSchemePdf, exportSchemePng, exportSchemeSvg, schemeSvgString } from "@/lib/pid/export";
 import { ChangesPopover, CommandBar, CopilotPopover, Dashboard, FindPanel, LayersPopover, ModeSwitch, ShortcutsPopover, UndoRedo, useGlobalShortcuts } from "@/components/pid/Workbench";
 import { Command as CommandIcon } from "lucide-react";
+import { RemoteSyncPanel } from "@/components/pid/RemoteSyncPanel";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -98,6 +99,7 @@ function App() {
           <TabsTrigger value="bom"><ClipboardList className="mr-1.5 h-4 w-4" />BOM / MTO</TabsTrigger>
         </TabsList>
         <SystemDialog />
+        <RemoteSyncPanel />
         <div className="ml-auto hidden flex-col items-end gap-0.5 font-mono text-[11px] text-muted-foreground xl:flex">
           <div className="flex gap-4">
             <span>{scheme.nodes.length} elemente · {scheme.pipes.length} segmente · {stats.lengthTotal.toFixed(1)} m</span>

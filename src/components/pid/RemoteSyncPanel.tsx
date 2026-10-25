@@ -44,7 +44,24 @@ export function RemoteSyncPanel() {
     setSession(null);
     setRevisionNo(null);
     try {
-      setDrawingId(window.localStorage.getItem("pid-remote-link:" + scheme.id) ?? "");
+      const savedLink = window.localStorage.getItem("pid-remote-link:" + scheme.id);
+      if (!savedLink) {
+        setDrawingId("");
+      } else {
+        try {
+          const parsed: unknown = JSON.parse(savedLink);
+          if (parsed && typeof parsed === "object" && "drawingId" in parsed &&
+              typeof parsed.drawingId === "string") {
+            setDrawingId(parsed.drawingId);
+            setRevisionNo(typeof parsed.revisionNo === "number" && Number.isSafeInteger(parsed.revisionNo)
+              ? parsed.revisionNo : null);
+          } else {
+            setDrawingId(savedLink);
+          }
+        } catch {
+          setDrawingId(savedLink);
+        }
+      }
     } catch {
       setDrawingId("");
     }
@@ -58,9 +75,12 @@ export function RemoteSyncPanel() {
     return () => { active = false; };
   }, [scheme.id]);
 
-  const rememberDrawing = (id: string) => {
+  const rememberDrawing = (id: string, revision: number) => {
     setDrawingId(id);
-    try { window.localStorage.setItem("pid-remote-link:" + scheme.id, id); } catch { /* optional browser convenience */ }
+    setRevisionNo(revision);
+    try {
+      window.localStorage.setItem("pid-remote-link:" + scheme.id, JSON.stringify({ drawingId: id, revisionNo: revision }));
+    } catch { /* optional browser convenience */ }
   };
 
   const signIn = async (event: FormEvent<HTMLFormElement>) => {
@@ -100,8 +120,7 @@ export function RemoteSyncPanel() {
     try {
       const remote = await loadRemoteDrawing(id);
       setScheme({ ...remote.snapshot.scheme, id: scheme.id });
-      rememberDrawing(remote.drawingId);
-      setRevisionNo(remote.revisionNo);
+      rememberDrawing(remote.drawingId, remote.revisionNo);
       setStatus("Desen încărcat din PostgreSQL, revizia " + remote.revisionNo + ".");
     } catch (error) {
       setStatus(errorMessage(error));
@@ -114,14 +133,15 @@ export function RemoteSyncPanel() {
     setBusy(true);
     try {
       const id = drawingId.trim();
-      const remote = id
-        ? await (async () => {
-            const current = await loadRemoteDrawing(id);
-            return saveRemoteDrawing(id, current.revisionNo, scheme);
-          })()
-        : await createRemoteDrawing(scheme);
-      rememberDrawing(remote.drawingId);
-      setRevisionNo(remote.revisionNo);
+      let remote;
+      if (!id) {
+        remote = await createRemoteDrawing(scheme);
+      } else {
+        // Use the last observed revision so concurrent edits produce a visible 409.
+        const baseRevision = revisionNo ?? (await loadRemoteDrawing(id)).revisionNo;
+        remote = await saveRemoteDrawing(id, baseRevision, scheme);
+      }
+      rememberDrawing(remote.drawingId, remote.revisionNo);
       setStatus("Desen sincronizat cu PostgreSQL, revizia " + remote.revisionNo + ".");
     } catch (error) {
       setStatus(errorMessage(error));

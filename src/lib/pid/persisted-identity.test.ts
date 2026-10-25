@@ -25,10 +25,12 @@ function project(id: string): Scheme {
 
 describe("upgradePersistedProjectIdentities", () => {
   it("upgrades valid projects while retaining an invalid project", () => {
+    const firstProject = project("good-1");
+    const secondProject = project("good-2");
     const broken = { id: "broken", nodes: [], pipes: [{ id: "p", from: { node: "missing" }, to: { node: "missing" } }] };
     let next = 1;
     const result = upgradePersistedProjectIdentities(
-      { activeId: "good-1", projects: [project("good-1"), broken, project("good-2")] },
+      { activeId: "good-1", projects: [firstProject, broken, secondProject] },
       () => uuid(next++),
     );
 
@@ -36,7 +38,8 @@ describe("upgradePersistedProjectIdentities", () => {
     expect(result.failedProjects).toHaveLength(1);
     expect(result.failedProjects[0]).toMatchObject({ index: 1, projectId: "broken" });
     expect(result.state.projects[1]).toBe(broken);
-    expect(result.state.projects[0]).not.toBe(project("good-1"));
+    expect(result.state.projects[0]).not.toBe(firstProject);
+    expect(result.state.projects[2]).not.toBe(secondProject);
     expect(result.state.activeId).toBe("good-1");
   });
 

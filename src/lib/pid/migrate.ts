@@ -2,7 +2,7 @@
 import { DEFAULT_CIRCUIT_COLORS } from "./catalog";
 import type { Pipe, PidNode, Scheme } from "./types";
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /**
  * v1/v2 (fără schemaVersion): câmpuri opționale lipsă, fittings/points nedefinite,

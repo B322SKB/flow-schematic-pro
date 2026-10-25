@@ -23,3 +23,21 @@ jobs:
         run: bun run test
       - name: Build application
         run: bun run build
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify standalone Node server output
+        run: |
+          test -f .output/server/index.mjs
+          node .output/server/index.mjs > /tmp/pid-server.log 2>&1 &
+          echo $! > /tmp/pid-server.pid
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3000/ > /dev/null; then
+              kill "$(cat /tmp/pid-server.pid)"
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/pid-server.log
+          kill "$(cat /tmp/pid-server.pid)" || true
+          exit 1

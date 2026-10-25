@@ -1,5 +1,6 @@
 import type { Scheme } from "./types";
 import { upgradeSchemeEntityIds, type IdFactory } from "./cad-identity";
+import { backupPersistedValue, type KeyValueStorage, type PersistedBackupResult } from "./persisted-backup";
 
 export interface PersistedProjectIdentityFailure {
   index: number;
@@ -13,12 +14,14 @@ export interface PersistedIdentityUpgradeResult<T> {
   failedProjects: PersistedProjectIdentityFailure[];
 }
 
+export interface PersistedIdentityMigrationResult<T> extends PersistedIdentityUpgradeResult<T> {
+  backup: PersistedBackupResult;
+}
+
 /**
  * Upgrade each persisted project independently.
- *
- * Invalid projects are retained byte-for-byte at the object level; one bad
- * project must not prevent the remaining projects from being upgraded.
- * This helper is intentionally pure and does not write browser storage.
+ * Invalid projects are retained by object identity; one bad project does not
+ * prevent valid projects from being upgraded.
  */
 export function upgradePersistedProjectIdentities<T>(
   persisted: T,
@@ -65,5 +68,27 @@ export function upgradePersistedProjectIdentities<T>(
     state: { ...record, projects } as T,
     migratedProjectIds,
     failedProjects,
+  };
+}
+
+/**
+ * Back up the exact raw Zustand storage value before upgrading entity IDs.
+ * A missing source or failed backup aborts migration before Zustand can write
+ * the upgraded state. Per-project failures are retained and reported.
+ */
+export function migratePersistedPidState<T>(
+  persisted: T,
+  storage: KeyValueStorage,
+  storageKey: string,
+  idFactory: IdFactory = () => crypto.randomUUID(),
+): PersistedIdentityMigrationResult<T> {
+  const backup = backupPersistedValue(storage, storageKey);
+  if (!backup.hadSourceValue) {
+    throw new Error(`Cannot migrate persisted PID state: source storage value is missing (${storageKey})`);
+  }
+
+  return {
+    ...upgradePersistedProjectIdentities(persisted, idFactory),
+    backup,
   };
 }

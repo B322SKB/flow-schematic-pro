@@ -19,6 +19,9 @@ jobs:
       PGUSER: pid_test
       PGPASSWORD: pid_test_password
       PGCONNECT_TIMEOUT: 5
+      PID_ADMIN_EMAIL: admin@pid.local
+      PID_ADMIN_PASSWORD_HASH: "pbkdf2$310000$ABEiM0RVZneImaq7zN3u_w$u9SUEGrpYENvHdgsxf2H52HfhQkqCjau5TCFF5VOeQw"
+      PID_SESSION_SECRET: "ci-session-secret-change-me-32-bytes-minimum"
     services:
       postgres:
         image: postgres:16-alpine

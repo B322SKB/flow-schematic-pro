@@ -140,6 +140,20 @@ if (-not ($envLines | Where-Object { $_.StartsWith("APP_BIND_ADDRESS=", [System.
   Set-EnvSetting -Lines $envLines -Name "APP_BIND_ADDRESS" -Value "127.0.0.1"
 }
 [System.IO.File]::WriteAllLines($environmentPath, $envLines.ToArray(), [System.Text.Encoding]::ASCII)
+try {
+  $environmentAcl = Get-Acl -LiteralPath $environmentPath
+  $environmentAcl.SetAccessRuleProtection($true, $false)
+  foreach ($rule in @($environmentAcl.Access)) {
+    [void]$environmentAcl.RemoveAccessRuleSpecific($rule)
+  }
+  $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+  $ownerRule = New-Object System.Security.AccessControl.FileSystemAccessRule($currentUser, "FullControl", "Allow")
+  $environmentAcl.SetAccessRule($ownerRule)
+  Set-Acl -LiteralPath $environmentPath -AclObject $environmentAcl
+}
+catch {
+  throw "Could not restrict access to the generated .env credentials file: $($_.Exception.Message)"
+}
 
 if ($generatedAdminPassword) {
   Write-Output ("Administrator email: " + $adminEmail)

@@ -937,9 +937,6 @@ export const usePid = create<State>()(
           throw new Error("PID migration requires browser localStorage for a verified backup");
         }
         const result = migratePersistedPidState(persisted, window.localStorage, "pid-studio-v2");
-        if (result.failedProjects.length) {
-          console.warn("PID identity migration retained projects with invalid entity references:", result.failedProjects);
-        }
         return result.state as State;
       },
       partialize: (s) => ({ projects: s.projects, activeId: s.activeId, pipeDefaults: s.pipeDefaults, grid: s.grid, modules: s.modules, cad: s.cad,

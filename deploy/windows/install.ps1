@@ -16,10 +16,18 @@ foreach ($relativePath in @("Dockerfile", "docker-compose.yml", "db/migrations/0
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
   throw "Docker was not found. Install Docker Desktop, enable the WSL 2 backend and Linux containers, then run this installer again."
 }
-& docker compose version *> $null
-if ($LASTEXITCODE -ne 0) { throw "Docker Compose v2 is unavailable. Update Docker Desktop and retry." }
-& docker info 2>$null
-if ($LASTEXITCODE -ne 0) { throw "The Docker engine is not running. Start Docker Desktop and retry." }
+$previousDockerErrorActionPreference = $ErrorActionPreference
+try {
+  $ErrorActionPreference = "Continue"
+  & docker compose version 2>$null | Out-Null
+  $composeExitCode = $LASTEXITCODE
+  & docker info 2>$null | Out-Null
+  $dockerInfoExitCode = $LASTEXITCODE
+} finally {
+  $ErrorActionPreference = $previousDockerErrorActionPreference
+}
+if ($composeExitCode -ne 0) { throw "Docker Compose v2 is unavailable. Update Docker Desktop and retry." }
+if ($dockerInfoExitCode -ne 0) { throw "The Docker engine is not running. Start Docker Desktop and retry." }
 
 $environmentPath = Join-Path $repoRoot ".env"
 $envLines = New-Object "System.Collections.Generic.List[string]"

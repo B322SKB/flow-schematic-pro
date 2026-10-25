@@ -28,7 +28,7 @@ function errorMessage(error: unknown): string {
 
 export function RemoteSyncPanel() {
   const scheme = usePid((state) => state.scheme);
-  const setScheme = usePid((state) => state.setScheme);
+  const replaceSchemeSnapshot = usePid((state) => state.replaceSchemeSnapshot);
   const [session, setSession] = useState<RemoteSession | null>(null);
   const [checking, setChecking] = useState(true);
   const [email, setEmail] = useState("");
@@ -119,7 +119,7 @@ export function RemoteSyncPanel() {
     setBusy(true);
     try {
       const remote = await loadRemoteDrawing(id);
-      setScheme({ ...remote.snapshot.scheme, id: scheme.id });
+      replaceSchemeSnapshot(remote.snapshot.scheme);
       rememberDrawing(remote.drawingId, remote.revisionNo);
       setStatus("Desen încărcat din PostgreSQL, revizia " + remote.revisionNo + ".");
     } catch (error) {

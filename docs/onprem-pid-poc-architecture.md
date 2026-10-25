@@ -123,14 +123,24 @@ D. **Engineering integration:** snapshot-based solver, calculation reports, BOM/
 
 Do not begin with Redis, distributed locks, elaborate microservices or a large CAD symbol catalog. Add those only when the measured PoC requires them.
 
-## 8. Open technical questions
+## 8. Decisions recorded and remaining questions
 
-- Which exact Windows version(s) and LibreCAD release will be used on engineering workstations?
-- Must the desktop client be LibreCAD specifically, or can the PoC compare another CAD host if plugin access proves insufficient?
-- Is Active Directory/LDAP mandatory for the first pilot, or can the PoC use local test accounts?
-- How many simultaneous editors must the pilot support? Start by proving 2 concurrent editors; then load-test 5, 10 and higher.
-- Which company P&ID symbol/tagging conventions and ISO/ISA profile are authoritative?
+### Confirmed for the PoC
+- Target deployment host: Windows server/workstation running Docker Desktop with WSL2 and Linux containers.
+- Authentication: application-managed user accounts for the first phase; AD/LDAP is out of scope for this PoC.
+- Collaboration target: 2–3 simultaneous editors.
+- Start with one application/API service and PostgreSQL. Redis is deliberately deferred until a measured requirement appears.
+- Do not introduce Kubernetes for this PoC.
+
+### Still to validate
+- Exact Windows version(s) and LibreCAD release on engineering workstations.
+- Whether LibreCAD is mandatory or another CAD host may be compared if integration access proves insufficient.
+- Authoritative company P&ID symbol/tagging conventions and ISO/ISA profile.
+- The current Vite/TanStack build config uses the Lovable config's default Nitro Cloudflare target. A self-hosted Docker deployment must explicitly select and verify a Node-compatible Nitro output before a Dockerfile/Compose stack is considered runnable. The current successful web build does not prove a Node container runtime.
+- Server sizing, network/DNS, TLS certificate ownership, backup retention and restore target remain to be agreed before production-like deployment.
 
 ## 9. Current status and limits of this audit
 
-This is a source-level repository audit and architecture proposal. Tests have not been executed in a local runtime as part of this audit. The PoC infrastructure described above is not yet implemented. The next coding increment should be the smallest testable foundation slice, after the CAD integration gate and API/database choices are agreed.
+This remains a source-level repository audit and architecture proposal. A GitHub Actions workflow now runs unit tests and a production build on pushes to this PoC branch and pull requests to `main`. The browser-side UUID migration and backup helpers have focused unit coverage. The latest migration-hardening change is still awaiting its CI result at the time of this edit.
+
+The PoC API, PostgreSQL schema, authentication, revision service, WebSocket collaboration, Docker image and Compose deployment are not yet implemented. The next coding increment should first close the migration safety gate, then prove a Node-compatible self-hosted build target, and only then add the smallest runnable Docker/API/database slice.

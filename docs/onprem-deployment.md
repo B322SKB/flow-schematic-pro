@@ -43,8 +43,9 @@ docker compose down -v if you need to preserve database contents.
 - PUT /api/drawings/:id: requires a session and current revision in If-Match,
   writes a new immutable revision, and returns 409 for a stale base revision.
 
-The editor UI is not connected to these drawing endpoints yet. Browser
-localStorage remains the user-facing source of truth.
+The editor header includes a cloud control for sign-in and manual upload/load of
+the active project. Browser localStorage remains the local source of truth;
+synchronization is initiated by the user.
 
 ## Operations
 
@@ -73,7 +74,8 @@ This is not yet a multi-user on-prem deployment:
 
 - One administrator identity is configured from environment variables. There
   are no per-user accounts, drawing ownership, roles, or audit actor.
-- The editor still saves in localStorage and does not sync with PostgreSQL.
+- The editor still saves in localStorage and supports only manual complete
+  snapshot upload/load. It does not automatically synchronize edits.
 - The HTTP-only session cookie protects the drawing API, but TLS is not included.
   Keep the port local-only until the editor is authenticated and TLS is deployed.
 - No automated backups, monitoring, or production hardening is included.

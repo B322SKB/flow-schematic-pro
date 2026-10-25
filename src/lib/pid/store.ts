@@ -14,6 +14,7 @@ import { propagateFlows, totalDemand } from "./network";
 import { maxR } from "./velocity";
 import { emptyHistory, record, redo as redoTx, undo as undoTx, type HistoryState } from "./history";
 import { migrateScheme, SCHEMA_VERSION } from "./migrate";
+import { migratePersistedPidState } from "./persisted-identity";
 import { copySelectionData, pasteData, type ClipData } from "./clipboard";
 import { bulkEditNodes, bulkEditPipes, type BulkResult, type NodeBulkPatch, type PipeBulkPatch } from "./bulk";
 import { connectOpenEnd, validateConnection, type ConnectionCheck, type PortRef } from "./connect";
@@ -926,8 +927,18 @@ export const usePid = create<State>()(
     {
       name: "pid-studio-v2",
       version: SCHEMA_VERSION,
-      // datele vechi (v0–v2) se migrează automat; merge aplică migrarea și pe fiecare proiect
-      migrate: (persisted) => persisted as State,
+      // Migrarea v3 -> v4: backup brut obligatoriu înainte de conversia ID-urilor.
+      // Dacă backup-ul eșuează, callback-ul aruncă eroare și Zustand nu persistă starea migrată.
+      migrate: (persisted) => {
+        if (typeof window === "undefined" || !window.localStorage) {
+          throw new Error("PID migration requires browser localStorage for a verified backup");
+        }
+        const result = migratePersistedPidState(persisted, window.localStorage, "pid-studio-v2");
+        if (result.failedProjects.length) {
+          console.warn("PID identity migration retained projects with invalid entity references:", result.failedProjects);
+        }
+        return result.state as State;
+      },
       partialize: (s) => ({ projects: s.projects, activeId: s.activeId, pipeDefaults: s.pipeDefaults, grid: s.grid, modules: s.modules, cad: s.cad,
         currentLayer: s.currentLayer, recentCommands: s.recentCommands, pasteOffset: s.pasteOffset }),
       merge: (persisted, current) => {

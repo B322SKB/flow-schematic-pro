@@ -18,7 +18,7 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 }
 & docker compose version *> $null
 if ($LASTEXITCODE -ne 0) { throw "Docker Compose v2 is unavailable. Update Docker Desktop and retry." }
-& docker info *> $null
+& docker info 2>$null
 if ($LASTEXITCODE -ne 0) { throw "The Docker engine is not running. Start Docker Desktop and retry." }
 
 $environmentPath = Join-Path $repoRoot ".env"

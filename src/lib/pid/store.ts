@@ -15,6 +15,7 @@ import { maxR } from "./velocity";
 import { emptyHistory, record, redo as redoTx, undo as undoTx, type HistoryState } from "./history";
 import { migrateScheme, SCHEMA_VERSION } from "./migrate";
 import { migratePersistedPidState } from "./persisted-identity";
+import { upgradeSchemeEntityIds } from "./cad-identity";
 import { copySelectionData, pasteData, type ClipData } from "./clipboard";
 import { bulkEditNodes, bulkEditPipes, type BulkResult, type NodeBulkPatch, type PipeBulkPatch } from "./bulk";
 import { connectOpenEnd, validateConnection, type ConnectionCheck, type PortRef } from "./connect";
@@ -23,7 +24,7 @@ import { BUILTIN_MODULES, insertModuleData } from "./modules";
 import { rerouteMany } from "./routing";
 import { retagSelection, tagAvailable, nextTag, pipeTag } from "./tags";
 
-const uid = () => Math.random().toString(36).slice(2, 10);
+const uid = () => crypto.randomUUID();
 export const PX_PER_M = 40;
 
 export interface PipeDefaults {
@@ -260,10 +261,12 @@ export const TEMPLATES: { id: TemplateId; name: string; desc: string }[] = [
 ];
 export function buildTemplate(id: TemplateId, name?: string): Scheme {
   const s = id === "demo" ? demo() : id === "ring_dc" ? ringDc() : emptyScheme(name ?? "Proiect nou");
-  return name ? { ...s, name } : s;
+  const named = name ? { ...s, name } : s;
+  // Built-in templates contain legacy readable IDs; normalize them before they enter persistent state.
+  return upgradeSchemeEntityIds(named).scheme;
 }
 
-const first = demo();
+const first = buildTemplate("demo");
 
 
 function touch(s: Scheme): Scheme {

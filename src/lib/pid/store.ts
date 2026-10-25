@@ -111,6 +111,7 @@ export interface State {
   pipeDefaults: PipeDefaults;
   scheme: Scheme;
   setScheme: (p: Partial<Scheme>) => void;
+  replaceSchemeSnapshot: (snapshot: Scheme) => void;
   addNode: (type: SymbolType, x: number, y: number) => void;
   updateNode: (id: string, p: Partial<PidNode>) => void;
   addPipe: (from: Pipe["from"], to: Pipe["to"], opts?: { direct?: boolean; circuit?: CircuitId }) => void;
@@ -523,6 +524,12 @@ export const usePid = create<State>()(
         pipeDefaults: { dn: 80, material: "steel_carbon", joint: "grooved", circuit: "supply", flow: 20, length: 5 },
 
         setScheme: (p) => patchScheme((s) => ({ ...s, ...p }), undefined, `Setări schemă (${Object.keys(p).join(", ")})`),
+        replaceSchemeSnapshot: (snapshot) => {
+          const localId = get().scheme.id;
+          const next = { ...snapshot, id: localId };
+          syncCustomSymbols(next.customSymbols);
+          patchScheme(() => next, undefined, "Încărcare desen de pe server");
+        },
 
         addNode: (type, x, y) => {
           const st = get();

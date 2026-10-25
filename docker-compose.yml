@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: pid
       POSTGRES_USER: pid_app
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./db/migrations:/docker-entrypoint-initdb.d:ro
@@ -32,13 +32,16 @@ services:
       PGPORT: 5432
       PGDATABASE: pid
       PGUSER: pid_app
-      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      PGPASSWORD: \${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       PGCONNECT_TIMEOUT: 5
+      PID_ADMIN_EMAIL: \${PID_ADMIN_EMAIL:?Run deploy/windows/install.ps1 to initialize credentials}
+      PID_ADMIN_PASSWORD_HASH: \${PID_ADMIN_PASSWORD_HASH:?Run deploy/windows/install.ps1 to initialize credentials}
+      PID_SESSION_SECRET: \${PID_SESSION_SECRET:?Run deploy/windows/install.ps1 to initialize credentials}
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3000}:3000"
+      - "\${APP_BIND_ADDRESS:-127.0.0.1}:\${APP_PORT:-3000}:3000"
     healthcheck:
       test:
         - CMD

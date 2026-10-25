@@ -136,11 +136,11 @@ Do not begin with Redis, distributed locks, elaborate microservices or a large C
 - Exact Windows version(s) and LibreCAD release on engineering workstations.
 - Whether LibreCAD is mandatory or another CAD host may be compared if integration access proves insufficient.
 - Authoritative company P&ID symbol/tagging conventions and ISO/ISA profile.
-- The current Vite/TanStack build config uses the Lovable config's default Nitro Cloudflare target. A self-hosted Docker deployment must explicitly select and verify a Node-compatible Nitro output before a Dockerfile/Compose stack is considered runnable. The current successful web build does not prove a Node container runtime.
+- The Vite/TanStack build now explicitly selects Nitro's `node-server` preset for self-hosting. A multi-stage Node 22 Dockerfile and a minimal Compose app service have been added. CI now checks for `.output/server/index.mjs` and starts the built server for an HTTP smoke test; Docker Engine execution on the target Windows host is still a separate acceptance test.
 - Server sizing, network/DNS, TLS certificate ownership, backup retention and restore target remain to be agreed before production-like deployment.
 
 ## 9. Current status and limits of this audit
 
 This remains a source-level repository audit and architecture proposal. A GitHub Actions workflow now runs unit tests and a production build on pushes to this PoC branch and pull requests to `main`. The browser-side UUID migration and backup helpers have focused unit coverage. The latest migration-hardening change is still awaiting its CI result at the time of this edit.
 
-The PoC API, PostgreSQL schema, authentication, revision service, WebSocket collaboration, Docker image and Compose deployment are not yet implemented. The next coding increment should first close the migration safety gate, then prove a Node-compatible self-hosted build target, and only then add the smallest runnable Docker/API/database slice.
+The Node-targeted build, Dockerfile and minimal app-only Compose deployment are now present on the PoC branch. PostgreSQL is deliberately not included in Compose yet because the application has no database-backed API to consume it; adding an idle database would imply functionality that does not exist. The next increment is the server/API foundation and PostgreSQL integration, followed by authentication and revision persistence. The Docker image has not yet been executed on the target Windows/Docker Desktop host.
